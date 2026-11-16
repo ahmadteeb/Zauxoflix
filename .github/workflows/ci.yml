@@ -1,0 +1,645 @@
+name: CI/CD
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - v*
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: Release Tag Version (e.g. v1.0.0)
+        required: false
+        default: v1.0.0
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  FLUTTER_VERSION: 3.47.9
+  TAG: ${{ github.event.inputs.tag_name || github.ref_name }}
+  BUILD_NUMBER: ${{ github.run_number }}
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  test-flutter:
+    name: Test Flutter
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Install Flutter dependencies
+        run: flutter pub get
+
+      - name: Check Dart formatting
+        run: dart format --output=none --set-exit-if-changed .
+
+      - name: Analyze Flutter code
+        run: flutter analyze --fatal-infos
+
+      - name: Run Flutter tests
+        run: flutter test
+
+  test-supabase:
+    name: Test Supabase
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Deno
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - name: Check Deno formatting
+        run: deno fmt --check supabase/functions supabase/tests
+
+      - name: Check Edge Function types
+        run: deno check supabase/functions/tv-pairing/index.ts
+
+      - name: Run backend tests
+        run: deno test --allow-read --allow-env --allow-sys supabase/tests/
+
+  build-linux:
+    name: Build Linux
+    needs:
+      - test-flutter
+      - test-supabase
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Install Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            clang cmake ninja-build pkg-config \
+            libgtk-3-dev liblzma-dev libstdc++-12-dev \
+            libsecret-1-dev libjsoncpp-dev \
+            zstd rpm alien binutils
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Enable Linux desktop
+        run: flutter config --enable-linux-desktop
+
+      - name: Build Linux release
+        working-directory: app
+        run: |
+          DEFINES=()
+          [ -z "$SUPABASE_URL" ] || DEFINES+=("--dart-define=SUPABASE_URL=$SUPABASE_URL")
+          [ -z "$SUPABASE_ANON_KEY" ] || DEFINES+=("--dart-define=SUPABASE_ANON_KEY=$SUPABASE_ANON_KEY")
+          flutter pub get
+          flutter build linux --release --build-name="${TAG#v}" --build-number="$BUILD_NUMBER" "${DEFINES[@]}"
+
+      - name: Package Linux formats
+        run: |
+          VERSION="${TAG#v}"
+          BUNDLE="app/build/linux/x64/release/bundle"
+
+          # 1. Generic tarball
+          tar -czf "Zauxoflix-${TAG}-linux-x64.tar.gz" -C "$BUNDLE" .
+
+          # 2. Debian package
+          DEB_DIR="deb_package"
+          mkdir -p "${DEB_DIR}/opt/zauxoflix" "${DEB_DIR}/usr/bin" \
+            "${DEB_DIR}/usr/share/applications" "${DEB_DIR}/usr/share/pixmaps" "${DEB_DIR}/DEBIAN"
+
+          cp -r "$BUNDLE"/* "${DEB_DIR}/opt/zauxoflix/"
+          chmod +x "${DEB_DIR}/opt/zauxoflix/zauxoflix"
+
+          cat << 'EOF' > "${DEB_DIR}/usr/bin/zauxoflix"
+          #!/bin/sh
+          exec /opt/zauxoflix/zauxoflix "$@"
+          EOF
+          chmod +x "${DEB_DIR}/usr/bin/zauxoflix"
+
+          cat << EOF > "${DEB_DIR}/usr/share/applications/zauxoflix.desktop"
+          [Desktop Entry]
+          Version=1.0
+          Type=Application
+          Name=Zauxoflix
+          Comment=Multi-Platform IPTV & VOD Streaming Player
+          Exec=/usr/bin/zauxoflix
+          Icon=zauxoflix
+          Terminal=false
+          Categories=AudioVideo;Video;Player;TV;
+          EOF
+
+          cp app/snap/gui/zauxoflix.png "${DEB_DIR}/usr/share/pixmaps/zauxoflix.png"
+
+          cat << EOF > "${DEB_DIR}/DEBIAN/control"
+          Package: zauxoflix
+          Version: ${VERSION}
+          Architecture: amd64
+          Maintainer: Ahmad El-Khatib <ahmadteeb@users.noreply.github.com>
+          Depends: libgtk-3-0, liblzma5, libstdc++6, libsecret-1-0
+          Section: video
+          Priority: optional
+          Description: Zauxoflix - Multi-Platform IPTV & VOD Streaming Player
+           A high-performance IPTV and VOD streaming application built with Flutter.
+          EOF
+
+          dpkg-deb --root-owner-group --build "${DEB_DIR}" "Zauxoflix-${TAG}-debian.deb"
+
+          # 3. Fedora / RHEL package
+          alien -r -c -k "Zauxoflix-${TAG}-debian.deb"
+          mv zauxoflix*.rpm "Zauxoflix-${TAG}-fedora.rpm"
+
+          # 4. Arch Linux package
+          ARCH_DIR="arch_package"
+          mkdir -p "$ARCH_DIR"
+          cp -a "$DEB_DIR/opt" "$DEB_DIR/usr" "$ARCH_DIR/"
+
+          INSTALLED_SIZE=$(du -sb "${ARCH_DIR}" | awk '{print $1}')
+          BUILD_DATE=$(date +%s)
+
+          cat << EOF > "${ARCH_DIR}/.PKGINFO"
+          pkgname = zauxoflix
+          pkgver = ${VERSION}-1
+          pkgdesc = Multi-Platform IPTV & VOD Streaming Player
+          url = https://github.com/ahmadteeb/Zauxoflix
+          builddate = ${BUILD_DATE}
+          packager = Ahmad El-Khatib <https://github.com/ahmadteeb>
+          size = ${INSTALLED_SIZE}
+          arch = x86_64
+          license = custom
+          depend = gtk3
+          depend = xz
+          EOF
+
+          tar --zstd -cf "Zauxoflix-${TAG}-Arch.pkg.tar.zst" -C "${ARCH_DIR}" .PKGINFO opt usr
+
+          # 5. AppImage
+          APPDIR="AppDir"
+          mkdir -p "${APPDIR}/usr/bin" "${APPDIR}/usr/lib" "${APPDIR}/usr/share/applications" \
+            "${APPDIR}/usr/share/icons/hicolor/256x256/apps"
+
+          cp -r "$BUNDLE"/* "${APPDIR}/usr/bin/"
+          chmod +x "${APPDIR}/usr/bin/zauxoflix"
+
+          cat << 'EOF' > "${APPDIR}/AppRun"
+          #!/bin/sh
+          HERE="$(dirname "$(readlink -f "${0}")")"
+          export LD_LIBRARY_PATH="${HERE}/usr/bin/lib:${HERE}/usr/lib:${LD_LIBRARY_PATH}"
+          exec "${HERE}/usr/bin/zauxoflix" "$@"
+          EOF
+          chmod +x "${APPDIR}/AppRun"
+
+          # AppImage launches by name, so Exec differs from the packaged .desktop file.
+          sed 's|^Exec=.*|Exec=zauxoflix|' "${DEB_DIR}/usr/share/applications/zauxoflix.desktop" > "${APPDIR}/zauxoflix.desktop"
+          cp app/snap/gui/zauxoflix.png "${APPDIR}/zauxoflix.png"
+          cp app/snap/gui/zauxoflix.png "${APPDIR}/usr/share/icons/hicolor/256x256/apps/zauxoflix.png"
+
+          curl -fsSL https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage -o appimagetool
+          chmod +x appimagetool
+          ARCH=x86_64 ./appimagetool --appimage-extract-and-run "${APPDIR}" "Zauxoflix-${TAG}-linux.AppImage"
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: zauxoflix-linux
+          if-no-files-found: error
+          path: |
+            Zauxoflix-*-Arch.pkg.tar.zst
+            Zauxoflix-*-debian.deb
+            Zauxoflix-*-fedora.rpm
+            Zauxoflix-*-linux.AppImage
+            Zauxoflix-*-linux-x64.tar.gz
+
+  build-windows:
+    name: Build Windows
+    needs:
+      - test-flutter
+      - test-supabase
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+    runs-on: windows-latest
+    timeout-minutes: 45
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Enable Windows desktop
+        run: flutter config --enable-windows-desktop
+
+      - name: Build Windows release
+        working-directory: app
+        run: |
+          DEFINES=()
+          [ -z "$SUPABASE_URL" ] || DEFINES+=("--dart-define=SUPABASE_URL=$SUPABASE_URL")
+          [ -z "$SUPABASE_ANON_KEY" ] || DEFINES+=("--dart-define=SUPABASE_ANON_KEY=$SUPABASE_ANON_KEY")
+          flutter pub get
+          flutter build windows --release --build-name="${TAG#v}" --build-number="$BUILD_NUMBER" "${DEFINES[@]}"
+
+      - name: Package Windows zip
+        shell: pwsh
+        run: Compress-Archive -Path "app\build\windows\x64\runner\Release\*" -DestinationPath "Zauxoflix-$env:TAG-windows-x64.zip"
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: zauxoflix-windows
+          if-no-files-found: error
+          path: Zauxoflix-*-windows-x64.zip
+
+  build-macos:
+    name: Build macOS
+    needs:
+      - test-flutter
+      - test-supabase
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+    runs-on: macos-latest
+    timeout-minutes: 60
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Enable macOS desktop
+        run: flutter config --enable-macos-desktop
+
+      - name: Build macOS release
+        working-directory: app
+        run: |
+          DEFINES=()
+          [ -z "$SUPABASE_URL" ] || DEFINES+=("--dart-define=SUPABASE_URL=$SUPABASE_URL")
+          [ -z "$SUPABASE_ANON_KEY" ] || DEFINES+=("--dart-define=SUPABASE_ANON_KEY=$SUPABASE_ANON_KEY")
+          flutter pub get
+          flutter build macos --release --build-name="${TAG#v}" --build-number="$BUILD_NUMBER" "${DEFINES[@]}"
+
+      - name: Package macOS .zip and .dmg
+        run: |
+          APP_DIR="app/build/macos/Build/Products/Release"
+          (cd "$APP_DIR" && zip -r -y "$GITHUB_WORKSPACE/Zauxoflix-${TAG}-macos.zip" zauxoflix.app)
+          hdiutil create -volname "Zauxoflix" -srcfolder "$APP_DIR/zauxoflix.app" -ov -format UDZO "Zauxoflix-${TAG}-macos.dmg"
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: zauxoflix-macos
+          if-no-files-found: error
+          path: |
+            Zauxoflix-*-macos.dmg
+            Zauxoflix-*-macos.zip
+
+  build-android:
+    name: Build Android
+    needs:
+      - test-flutter
+      - test-supabase
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Build Android release APK
+        working-directory: app
+        run: |
+          DEFINES=()
+          [ -z "$SUPABASE_URL" ] || DEFINES+=("--dart-define=SUPABASE_URL=$SUPABASE_URL")
+          [ -z "$SUPABASE_ANON_KEY" ] || DEFINES+=("--dart-define=SUPABASE_ANON_KEY=$SUPABASE_ANON_KEY")
+          flutter pub get
+          flutter build apk --release --build-name="${TAG#v}" --build-number="$BUILD_NUMBER" "${DEFINES[@]}"
+
+      - name: Package Android APK
+        run: |
+          cp app/build/app/outputs/flutter-apk/app-release.apk "$GITHUB_WORKSPACE/Zauxoflix-${TAG}-android.apk"
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: zauxoflix-android
+          if-no-files-found: error
+          path: Zauxoflix-*-android.apk
+
+  build-tizen:
+    name: Build Samsung Tizen
+    needs:
+      - test-flutter
+      - test-supabase
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 6.0.x
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Install Tizen dependencies
+        run: |
+          sudo add-apt-repository -y universe
+          sudo add-apt-repository -y ppa:deadsnakes/ppa
+          sudo apt-get update
+          # python3.8, libkf5*, libkchart2 are required by Tizen's package-manager-cli.
+          sudo apt-get install -y python3.8 libpython3.8
+          sudo apt-get install -y libpython2.7 expect gettext pciutils zip \
+            libkf5itemmodels5 libkf5kiowidgets5 libkchart2 \
+            || (sudo apt-get install -y expect gettext pciutils zip libncurses-dev \
+                libkf5itemmodels5 libkf5kiowidgets5 libkchart2)
+          sudo apt-get install -y libncurses5 \
+            || sudo ln -sf /usr/lib/x86_64-linux-gnu/libncurses.so.6 /usr/lib/x86_64-linux-gnu/libncurses.so.5
+
+      - name: Install Tizen Studio CLI and packages
+        run: |
+          STUDIO="$RUNNER_TEMP/tizen-studio"
+          curl -fsSL "https://download.tizen.org/sdk/Installer/tizen-studio_4.1/web-cli_Tizen_Studio_4.1_ubuntu-64.bin" \
+            -o "$RUNNER_TEMP/tizen-studio.bin"
+          chmod +x "$RUNNER_TEMP/tizen-studio.bin"
+          "$RUNNER_TEMP/tizen-studio.bin" --no-java-check --accept-license "$STUDIO"
+
+          "$STUDIO/package-manager/package-manager-cli.bin" install --accept-license \
+            NativeCLI NativeToolchain-Gcc-9.2 IOT-Headed-6.0-NativeAppDevelopment-CLI
+
+          echo "TIZEN_SDK=$STUDIO" >> "$GITHUB_ENV"
+          {
+            echo "$STUDIO/tools"
+            echo "$STUDIO/tools/ide/bin"
+          } >> "$GITHUB_PATH"
+
+      - name: Install flutter-tizen
+        run: |
+          git clone --depth 1 https://github.com/flutter-tizen/flutter-tizen.git "$HOME/flutter-tizen"
+          echo "$HOME/flutter-tizen/bin" >> "$GITHUB_PATH"
+
+      - name: Configure unsigned Tizen packaging
+        working-directory: app
+        run: |
+          [ -f tizen/tizen-manifest.xml ] || flutter-tizen create --platforms tizen .
+
+          # Flutter Tizen requires a signing profile even when MSBuild packaging is unsigned.
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+          import xml.etree.ElementTree as ET
+
+          package = Path(os.environ['HOME']) / 'flutter-tizen/lib/build_targets/package.dart'
+          source = package.read_text()
+          start = source.index('    // The output TPK is signed')
+          end = source.index('    File locateTpk(', start)
+          package.write_text(source[:start] + '    String? securityProfile;\n\n' + source[end:])
+          # Template creation compiled the CLI before this patch; force it to rebuild.
+          snapshot = package.parents[2] / 'bin/cache/flutter-tizen.snapshot'
+          snapshot.unlink(missing_ok=True)
+
+          project = Path('tizen/Runner.csproj')
+          tree = ET.parse(project)
+          root = tree.getroot()
+          sdk_name, separator, sdk_version = root.attrib.pop('Sdk').partition('/')
+          sdk = {'Sdk': sdk_name}
+          if separator:
+              sdk['Version'] = sdk_version
+          root.insert(0, ET.Element('Import', Project='Sdk.props', **sdk))
+          ET.SubElement(root, 'Import', Project='Sdk.targets', **sdk)
+          # Import SDK targets explicitly so this target overrides its signing target.
+          target = ET.SubElement(root, 'Target', Name='_TizenTpkSign',
+              DependsOnTargets='_TizenResolveTpkPackageName;_TizenPrepareTpkPackage;TizenCheckExecFileExist')
+          ET.SubElement(target, 'ZipDirectory', SourceDirectory='$(TizenPackageDir)',
+              DestinationFile='$(SignedTpkFile)', Overwrite='true')
+          ET.indent(tree, space='  ')
+          tree.write(project, encoding='unicode')
+          PY
+
+      - name: Build unsigned Tizen TPK
+        working-directory: app
+        run: |
+          DEFINES=()
+          [ -z "$SUPABASE_URL" ] || DEFINES+=("--dart-define=SUPABASE_URL=$SUPABASE_URL")
+          [ -z "$SUPABASE_ANON_KEY" ] || DEFINES+=("--dart-define=SUPABASE_ANON_KEY=$SUPABASE_ANON_KEY")
+
+          flutter-tizen pub get
+          flutter-tizen build tpk --release --device-profile common \
+            --build-name="${TAG#v}" --build-number="$BUILD_NUMBER" "${DEFINES[@]}"
+
+      - name: Package Tizen TPK
+        run: |
+          TPK="$(find app/build -name '*.tpk' -type f -print -quit)"
+          [ -n "$TPK" ] || { echo "No .tpk produced"; exit 1; }
+          # Verify that the published package really is unsigned.
+          python3 - "$TPK" <<'PYTHON'
+          import sys
+          import zipfile
+
+          with zipfile.ZipFile(sys.argv[1]) as package:
+              names = package.namelist()
+              assert 'tizen-manifest.xml' in names, 'Missing Tizen manifest'
+              assert not any(name == 'author-signature.xml' or
+                  (name.startswith('signature') and name.endswith('.xml'))
+                  for name in names), 'Expected an unsigned TPK'
+          PYTHON
+          cp "$TPK" "$GITHUB_WORKSPACE/Zauxoflix-${TAG}-tizen.tpk"
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: zauxoflix-tizen
+          if-no-files-found: error
+          path: Zauxoflix-*-tizen.tpk
+
+  build-webos:
+    name: Build LG webOS
+    needs:
+      - test-flutter
+      - test-supabase
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Install webOS tools and flutter-webos
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build clang lld binutils-arm-linux-gnueabi pkg-config wget
+          # lld as default linker supports the ARM cross-link (armelf_linux_eabi)
+          sudo ln -sf /usr/bin/ld.lld /usr/bin/ld
+          npm install -g @webosose/ares-cli
+
+          git clone https://github.com/lg-flutter-webos/flutter-webos.git "$HOME/flutter-webos"
+          echo "$HOME/flutter-webos/bin" >> "$GITHUB_PATH"
+          "$HOME/flutter-webos/bin/flutter-webos" precache -f
+
+          mkdir -p "$HOME/starfish-sdk"
+          wget -q https://github.com/lg-flutter-webos/ndk/releases/download/11.2.0/webos-ndk-flutter-starfish-x86_64-ca9v1-11.2.0.sh -O /tmp/webos-ndk.sh
+          chmod +x /tmp/webos-ndk.sh
+          /tmp/webos-ndk.sh -y -d "$HOME/starfish-sdk"
+          rm /tmp/webos-ndk.sh
+
+      - name: Build webOS IPK
+        working-directory: app
+        run: |
+          NDK_ENV=$(find "$HOME/starfish-sdk" -name "environment-setup*" -print -quit)
+          if [ -n "$NDK_ENV" ]; then
+            export WEBOS_FLUTTER_NDK_ENV="$NDK_ENV"
+            . "$NDK_ENV"
+            NDK_BIN=$(find "$HOME/starfish-sdk" -type d -name "arm-starfishmllib32-linux-gnueabi" -print -quit)
+            if [ -n "$NDK_BIN" ]; then
+              export PATH="$NDK_BIN:$PATH"
+            fi
+          fi
+
+          [ -d webos ] || flutter-webos create --platforms webos .
+
+          DEFINES=()
+          [ -z "$SUPABASE_URL" ] || DEFINES+=("--dart-define=SUPABASE_URL=$SUPABASE_URL")
+          [ -z "$SUPABASE_ANON_KEY" ] || DEFINES+=("--dart-define=SUPABASE_ANON_KEY=$SUPABASE_ANON_KEY")
+
+          flutter-webos build webos --release --build-name="${TAG#v}" --build-number="$BUILD_NUMBER" "${DEFINES[@]}"
+
+      - name: Package webOS IPK
+        run: |
+          IPK_FILE=$(find app/build -name "*.ipk" -type f -print -quit)
+          [ -n "$IPK_FILE" ] || { echo "No .ipk produced"; exit 1; }
+          cp "$IPK_FILE" "$GITHUB_WORKSPACE/Zauxoflix-${TAG}-webos.ipk"
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: zauxoflix-webos
+          if-no-files-found: error
+          path: Zauxoflix-*-webos.ipk
+
+  publish-release:
+    name: Publish release
+    needs:
+      - build-linux
+      - build-windows
+      - build-macos
+      - build-android
+      - build-tizen
+      - build-webos
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          pattern: zauxoflix-*
+          merge-multiple: true
+
+      - name: Generate checksums
+        working-directory: release-assets
+        run: |
+          find . -maxdepth 1 -type f ! -name SHA256SUMS.txt -exec sha256sum {} + > SHA256SUMS.txt
+          ls -lah
+          cat SHA256SUMS.txt
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.TAG }}
+          name: Zauxoflix ${{ env.TAG }}
+          files: release-assets/*
+          generate_release_notes: true

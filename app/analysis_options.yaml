@@ -1,0 +1,28 @@
+include: package:flutter_lints/flutter.yaml
+
+analyzer:
+  exclude:
+    - build/**
+    - android/**
+    - ios/**
+    - windows/**
+    - macos/**
+    - linux/**
+  language:
+    strict-casts: true
+    strict-raw-types: true
+    strict-inference: true
+
+linter:
+  rules:
+    - always_declare_return_types
+    - avoid_dynamic_calls
+    - prefer_final_locals
+    - unawaited_futures
+    - use_build_context_synchronously
+    - avoid_slow_async_io
+    # The high-value pair for this codebase: it runs stream subscriptions,
+    # timers and a download manager, where a missed cancel leaks for the
+    # lifetime of the app.
+    - cancel_subscriptions
+    - close_sinks

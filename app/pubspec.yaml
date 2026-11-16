@@ -1,0 +1,76 @@
+name: zauxoflix
+description: "Zauxoflix — IPTV client for mobile, desktop and Android TV. Streams a provisioned Xtream or M3U source with offline downloads, cross-device sync and remote playback control."
+publish_to: 'none'
+version: 0.1.0
+
+environment:
+  sdk: ^3.10.4
+
+dependencies:
+  cached_network_image: ^3.4.1
+  dio: ^5.10.0
+  drift: ^2.31.0
+  drift_flutter: ^0.2.0
+  flutter:
+    sdk: flutter
+  flutter_riverpod: ^3.3.2
+  flutter_secure_storage: ^10.3.1
+  fvp: ^0.37.3
+  mobile_scanner: ^7.5.0
+  qr_flutter: ^4.1.0
+  go_router: ^17.3.0
+  pub_semver: ^2.2.0
+  url_launcher: ^6.3.2
+  package_info_plus: ^10.2.1
+  path_provider: ^2.1.6
+  supabase_flutter: ^2.18.3
+  shared_preferences: ^2.5.5
+  video_player: ^2.11.1
+  wakelock_plus: ^1.6.1
+  window_manager: ^0.5.2
+  xml: ^6.5.0
+  simple_icons: ^16.23.0
+  # Keep these Tizen implementations compatible with webOS Dart 3.10.
+  wakelock_plus_tizen: 2.0.0
+  package_info_plus_tizen: ^1.2.0
+  video_player_tizen: 2.5.14
+  url_launcher_tizen: ^2.1.9
+  shared_preferences_tizen: ^2.3.5
+  path_provider_tizen: ^2.3.3
+  flutter_secure_storage_tizen: ^0.1.6
+  sqflite_tizen: 0.1.5
+
+dev_dependencies:
+  http: ^1.6.0
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+  drift_dev: ^2.31.0
+  build_runner: ^2.15.1
+  rename_app: ^1.6.6
+  icons_launcher: ^3.1.0
+
+# path_provider platform packages >=2.3 (Android) / >=2.5 (Darwin) use native
+# build hooks (jni/objective_c), which this SDK's build_runner cannot compile.
+dependency_overrides:
+  path_provider_android: 2.2.17
+  path_provider_foundation: 2.4.1
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/images/
+
+icons_launcher:
+  image_path: "assets/icons/icon.png"
+  platforms:
+    android:
+      enable: true
+    ios:
+      enable: true
+    windows:
+      enable: true
+    linux:
+      enable: true
+    macos:
+      enable: true

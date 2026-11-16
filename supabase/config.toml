@@ -1,0 +1,14 @@
+project_id = "zauxoflix"
+
+[api]
+enabled = true
+# Only public RPCs are exposed. Never add app_data or private here.
+schemas = ["public", "graphql_public"]
+extra_search_path = ["public", "extensions"]
+
+[realtime]
+enabled = true
+
+[functions.tv-pairing]
+# Signed-out TVs use start/poll; the handler verifies JWTs explicitly for claim.
+verify_jwt = false
