@@ -402,6 +402,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     _hideTimer?.cancel();
     _hideTimer = Timer(const Duration(seconds: 4), () {
       if (!mounted) return;
+      // Keep D-pad targets visible, and never steal focus from a track picker.
+      if (_overlayScope.hasFocus || !_rootFocusNode.hasFocus) {
+        _scheduleHide();
+        return;
+      }
       setState(() => _controlsVisible = false);
       // Enter must not activate a now-invisible button.
       if (_overlayScope.hasFocus) _rootFocusNode.requestFocus();
@@ -579,19 +584,36 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     context.pushReplacement('/remote', extra: RemoteControlArgs(device));
   }
 
+  void _handleBack() {
+    if (_fullscreen) {
+      _toggleFullscreen();
+    } else if (_controlsVisible && _overlayScope.hasFocus) {
+      setState(() => _controlsVisible = false);
+      _rootFocusNode.requestFocus();
+    } else {
+      _pop();
+    }
+  }
+
   KeyEventResult _onKey(FocusNode node, KeyEvent event) {
     if (event is! KeyDownEvent && event is! KeyRepeatEvent) {
       return KeyEventResult.ignored;
     }
+    if (event is KeyRepeatEvent &&
+        const [
+          LogicalKeyboardKey.escape,
+          LogicalKeyboardKey.goBack,
+          LogicalKeyboardKey.select,
+          LogicalKeyboardKey.enter,
+          LogicalKeyboardKey.space,
+          LogicalKeyboardKey.mediaPlayPause,
+          LogicalKeyboardKey.keyF,
+        ].contains(event.logicalKey)) {
+      return KeyEventResult.handled;
+    }
     switch (event.logicalKey) {
       case LogicalKeyboardKey.escape || LogicalKeyboardKey.goBack:
-        // Desktop convention: Escape drops out of fullscreen before it closes
-        // the player.
-        if (_fullscreen) {
-          _toggleFullscreen();
-        } else {
-          _pop();
-        }
+        _handleBack();
       case LogicalKeyboardKey.keyF when _fvpBackend:
         _toggleFullscreen();
       case LogicalKeyboardKey.space || LogicalKeyboardKey.mediaPlayPause:
@@ -603,7 +625,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           return KeyEventResult.ignored;
         }
         _togglePlay();
-      case LogicalKeyboardKey.arrowLeft || LogicalKeyboardKey.mediaRewind:
+      case LogicalKeyboardKey.mediaRewind:
+        _seekBy(const Duration(seconds: -10));
+      case LogicalKeyboardKey.mediaFastForward:
+        _seekBy(const Duration(seconds: 10));
+      case LogicalKeyboardKey.arrowLeft:
         if (_error != null) return KeyEventResult.ignored;
         if (_controlsVisible) {
           if (_rootFocusNode.hasPrimaryFocus) return _enterControls();
@@ -613,7 +639,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           return KeyEventResult.ignored;
         }
         _dpadSeek(const Duration(seconds: -10));
-      case LogicalKeyboardKey.arrowRight || LogicalKeyboardKey.mediaFastForward:
+      case LogicalKeyboardKey.arrowRight:
         if (_error != null) return KeyEventResult.ignored;
         if (_controlsVisible) {
           if (_rootFocusNode.hasPrimaryFocus) return _enterControls();
@@ -632,7 +658,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           _showControls();
           return KeyEventResult.ignored;
         }
-        _showControls();
+        return _enterControls();
       default:
         return KeyEventResult.ignored;
     }
@@ -681,7 +707,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       body: PopScope(
         canPop: false,
         onPopInvokedWithResult: (didPop, _) {
-          if (!didPop) _pop();
+          if (!didPop) _handleBack();
         },
         child: Focus(
           focusNode: _rootFocusNode,
@@ -925,6 +951,7 @@ class _ControlsOverlay extends StatelessWidget {
               ),
             ),
             ListTile(
+              autofocus: activeSubtitle == null,
               title: const Text('Off'),
               trailing: activeSubtitle == null
                   ? const Icon(Icons.check_rounded, color: AppColors.primary)
@@ -938,6 +965,7 @@ class _ControlsOverlay extends StatelessWidget {
               ),
             for (final (track, label) in subtitleTracks)
               ListTile(
+                autofocus: activeSubtitle == track,
                 title: Text(label),
                 trailing: activeSubtitle == track
                     ? const Icon(Icons.check_rounded, color: AppColors.primary)
@@ -978,6 +1006,9 @@ class _ControlsOverlay extends StatelessWidget {
               ),
             for (final (track, label) in audioTracks)
               ListTile(
+                autofocus:
+                    activeAudio == track ||
+                    (activeAudio == null && track == audioTracks.first.$1),
                 title: Text(label),
                 trailing: activeAudio == track
                     ? const Icon(Icons.check_rounded, color: AppColors.primary)
