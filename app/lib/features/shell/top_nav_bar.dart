@@ -4,7 +4,7 @@ import '../../core/theme/app_theme.dart';
 import '../remote/cast_button.dart';
 import 'destinations.dart';
 
-const double kTopNavHeight = 72;
+const double kTopNavHeight = 64;
 
 class TopNavBar extends StatelessWidget {
   const TopNavBar({
@@ -60,31 +60,50 @@ class TopNavBar extends StatelessWidget {
               ],
               const SizedBox(width: 16),
               Expanded(
-                child: SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      for (var i = 0; i < appDestinations.length; i++) ...[
-                        _NavItem(
-                          label: appDestinations[i].label,
-                          icon: appDestinations[i].icon,
-                          iconOnly:
-                              compact ||
-                              i >=
-                                  appDestinations.length - iconOnlyDestinations,
-                          selected: i == selectedIndex,
-                          focusNode: itemFocusNodes[i],
-                          onSelect: () => onSelect(i),
-                        ),
-                        if (i < appDestinations.length - 1)
-                          const SizedBox(width: 8),
+                child: Center(
+                  child: SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        for (
+                          var i = 0;
+                          i < appDestinations.length - iconOnlyDestinations;
+                          i++
+                        ) ...[
+                          _NavItem(
+                            label: appDestinations[i].label,
+                            icon: appDestinations[i].icon,
+                            iconOnly: compact,
+                            selected: i == selectedIndex,
+                            focusNode: itemFocusNodes[i],
+                            onSelect: () => onSelect(i),
+                          ),
+                          if (i <
+                              appDestinations.length - iconOnlyDestinations - 1)
+                            const SizedBox(width: 8),
+                        ],
                       ],
-                    ],
+                    ),
                   ),
                 ),
               ),
               if (!kTvBuild) ...[const SizedBox(width: 8), const CastButton()],
+              for (
+                var i = appDestinations.length - iconOnlyDestinations;
+                i < appDestinations.length;
+                i++
+              ) ...[
+                const SizedBox(width: 8),
+                _NavItem(
+                  label: appDestinations[i].label,
+                  icon: appDestinations[i].icon,
+                  iconOnly: true,
+                  selected: i == selectedIndex,
+                  focusNode: itemFocusNodes[i],
+                  onSelect: () => onSelect(i),
+                ),
+              ],
             ],
           ),
         ),
