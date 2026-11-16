@@ -368,11 +368,11 @@ Make sure `tizen` and `sdb` are available in your terminal. The commands below u
 4. Find the **TV's IP address** in its network settings, then connect:
 
    ```bash
-   sdb connect <Samsung TV IP>:26101
+   sdb connect <TV_IP_ADDRESS>:26101
    sdb devices
    ```
 
-Replace `<Samsung TV IP>` with your TV's IP. Save the serial shown by `sdb devices`, for example `<Samsung TV IP>:26101`. See the [device connection guide](https://github.com/flutter-tizen/flutter-tizen/blob/main/doc/configure-device.md).
+Replace `<TV_IP_ADDRESS>` with your TV's IP. Save the serial shown by `sdb devices`, for example `<TV_IP_ADDRESS>:26101`. See the [device connection guide](https://github.com/flutter-tizen/flutter-tizen/blob/main/doc/configure-device.md).
 
 #### Step 3: Create a Samsung certificate profile for your TV
 
@@ -402,7 +402,7 @@ Use the profile name you created if it differs from `ZauxoflixTV`. The signing c
 
 ```bash
 # Replace the serial with the value reported by sdb devices.
-tizen install -n "$PACKAGE" -s "<Samsung TV IP>:26101" -- "$PWD/signed"
+tizen install -n "$PACKAGE" -s "<TV_IP_ADDRESS>:26101" -- "$PWD/signed"
 ```
 
 Open **Zauxoflix** from the TV's Apps screen after installation. For certificate errors, check that you signed the package, selected a Samsung TV profile, included this TV's DUID, and permitted installation where required. Updates must use the same author certificate as the installed app; changing it may require uninstalling the old app, which can remove local app data. Device OS and CPU compatibility still apply: signing does not make a package compatible with every TV model.
