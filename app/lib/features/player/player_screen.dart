@@ -1073,6 +1073,8 @@ class _ControlsOverlay extends StatelessWidget {
                   final transport = Wrap(
                     alignment: WrapAlignment.center,
                     crossAxisAlignment: WrapCrossAlignment.center,
+                    spacing: 8,
+                    runSpacing: 8,
                     children: [
                       if (hasPrev || hasNext)
                         IconButton(
@@ -1094,15 +1096,21 @@ class _ControlsOverlay extends StatelessWidget {
                       if (controller != null)
                         ValueListenableBuilder(
                           valueListenable: controller,
-                          builder: (context, value, _) => IconButton(
+                          builder: (context, value, _) => IconButton.filled(
+                            style: IconButton.styleFrom(
+                              backgroundColor: Colors.white,
+                              foregroundColor: Colors.black,
+                              fixedSize: const Size(64, 64),
+                              padding: const EdgeInsets.all(12),
+                            ),
                             focusNode: playFocusNode,
                             onPressed: onTogglePlay,
                             tooltip: value.isPlaying ? 'Pause' : 'Play',
-                            iconSize: 52,
+                            iconSize: 36,
                             icon: Icon(
                               value.isPlaying
-                                  ? Icons.pause_circle_filled_rounded
-                                  : Icons.play_circle_filled_rounded,
+                                  ? Icons.pause_rounded
+                                  : Icons.play_arrow_rounded,
                             ),
                           ),
                         )
@@ -1124,9 +1132,11 @@ class _ControlsOverlay extends StatelessWidget {
                         ),
                     ],
                   );
-                  final aux = Wrap(
-                    alignment: WrapAlignment.end,
+                  final tracks = Wrap(
+                    alignment: WrapAlignment.start,
                     crossAxisAlignment: WrapCrossAlignment.center,
+                    spacing: 8,
+                    runSpacing: 8,
                     children: [
                       IconButton(
                         onPressed: () => _pickAudio(context),
@@ -1146,6 +1156,14 @@ class _ControlsOverlay extends StatelessWidget {
                               : AppColors.primary,
                         ),
                       ),
+                    ],
+                  );
+                  final display = Wrap(
+                    alignment: WrapAlignment.end,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
                       TextButton.icon(
                         onPressed: onCycleFit,
                         icon: const Icon(
@@ -1177,22 +1195,31 @@ class _ControlsOverlay extends StatelessWidget {
                         ),
                     ],
                   );
-                  // The aux cluster hugs the right edge as an overlay on wide
-                  // screens; on narrow ones it would cover the next button, so
-                  // it wraps onto its own line instead.
-                  return constraints.maxWidth < 900
+                  final stacked =
+                      constraints.maxWidth < 1100 ||
+                      MediaQuery.textScalerOf(context).scale(14) > 20;
+                  return stacked
                       ? Column(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            transport,
-                            Align(alignment: Alignment.centerRight, child: aux),
+                            Center(child: transport),
+                            const SizedBox(height: 16),
+                            Row(
+                              children: [
+                                Expanded(child: tracks),
+                                const SizedBox(width: 16),
+                                Expanded(child: display),
+                              ],
+                            ),
                           ],
                         )
-                      : Stack(
-                          alignment: Alignment.center,
+                      : Row(
                           children: [
+                            Expanded(child: tracks),
+                            const SizedBox(width: 24),
                             transport,
-                            Positioned(right: 0, child: aux),
+                            const SizedBox(width: 24),
+                            Expanded(child: display),
                           ],
                         );
                 },
