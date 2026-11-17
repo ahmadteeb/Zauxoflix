@@ -420,6 +420,8 @@ jobs:
 
       - name: Install Tizen dependencies
         run: |
+          # Launchpad occasionally returns transient 503 responses.
+          echo 'Acquire::Retries "5";' | sudo tee /etc/apt/apt.conf.d/80-retries > /dev/null
           sudo add-apt-repository -y universe
           sudo add-apt-repository -y ppa:deadsnakes/ppa
           sudo apt-get update
