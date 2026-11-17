@@ -500,7 +500,7 @@ jobs:
           [ -z "$SUPABASE_ANON_KEY" ] || DEFINES+=("--dart-define=SUPABASE_ANON_KEY=$SUPABASE_ANON_KEY")
 
           flutter-tizen pub get
-          flutter-tizen build tpk --release --device-profile common \
+          flutter-tizen build tpk --release --device-profile tv \
             --build-name="${TAG#v}" --build-number="$BUILD_NUMBER" "${DEFINES[@]}"
 
       - name: Package Tizen TPK
