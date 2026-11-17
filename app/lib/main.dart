@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -9,6 +8,7 @@ import 'package:window_manager/window_manager.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'core/input/input_modality.dart';
+import 'core/app_platform.dart';
 import 'core/responsive/form_factor.dart';
 import 'core/router/app_router.dart';
 import 'core/theme/app_theme.dart';
@@ -19,77 +19,118 @@ import 'data/backend/key_value_store.dart';
 import 'data/backend/secure_session_storage.dart';
 import 'features/remote/remote_playback.dart';
 
+String _startupStage = 'configuration';
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  runApp(_startupScreen());
+  try {
+    final app = await _initializeApplication().timeout(
+      const Duration(seconds: 30),
+    );
+    runApp(app);
+  } catch (error) {
+    // Do not print exception text: it can contain backend URLs or session data.
+    debugPrint('[Startup] $_startupStage failed: ${error.runtimeType}');
+    runApp(_startupScreen(error: '$_startupStage: ${error.runtimeType}'));
+  }
+}
+
+Widget _startupScreen({String? error}) => MaterialApp(
+  theme: AppTheme.dark,
+  home: Scaffold(
+    body: Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: error == null
+            ? const CircularProgressIndicator()
+            : Text(
+                'Zauxoflix could not start ($error). Restart the app. '
+                'If this continues, collect the TV startup logs.',
+                textAlign: TextAlign.center,
+              ),
+      ),
+    ),
+  ),
+);
+
+Future<Widget> _initializeApplication() async {
   const url = String.fromEnvironment('SUPABASE_URL');
   const key = String.fromEnvironment('SUPABASE_ANON_KEY');
   if (url.isEmpty || key.isEmpty) {
-    runApp(
-      MaterialApp(
-        theme: AppTheme.dark,
-        home: const Scaffold(
-          body: Center(
-            child: Padding(
-              padding: EdgeInsets.all(24),
-              child: Text(
-                'Supabase is not configured. Build with SUPABASE_URL and SUPABASE_ANON_KEY.',
-              ),
+    return MaterialApp(
+      theme: AppTheme.dark,
+      home: const Scaffold(
+        body: Center(
+          child: Padding(
+            padding: EdgeInsets.all(24),
+            child: Text(
+              'Supabase is not configured. Build with SUPABASE_URL and SUPABASE_ANON_KEY.',
             ),
           ),
         ),
       ),
     );
-    return;
   }
+  _startupStage = 'secure session storage';
   final store = SecureKeyValueStore();
   await Supabase.initialize(
     url: url,
     publishableKey: key,
     authOptions: FlutterAuthClientOptions(
       localStorage: SecureSessionStorage(store, url),
+      // Embedded TV sign-in uses pairing rather than desktop app links.
+      detectSessionInUri: !isTizenPlatform && !isWebOsPlatform,
     ),
   );
-  unawaited(SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky));
+  if (!isTizenPlatform && !isWebOsPlatform) {
+    unawaited(
+      SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky),
+    );
+  }
   // Desktop window control — needed for the player's fullscreen toggle.
-  if (Platform.isLinux || Platform.isWindows || Platform.isMacOS) {
+  if (isDesktopPlatform) {
+    _startupStage = 'desktop window initialization';
     await windowManager.ensureInitialized();
   }
   // Resolve TV-ness before anything reads kTvBuild (layout + input modality).
+  _startupStage = 'platform initialization';
   await detectTvDevice();
   InputModality.attach();
   // fvp backs video_player on desktop; Android/iOS keep the native players.
-  fvp.registerWith(
-    options: {
-      'platforms': ['linux', 'windows', 'macos'],
-      'video.decoders': ['auto', 'av1', 'hevc', 'h264', 'h265'],
-      'video.hwdec': [
-        'auto',
-        'dxva2',
-        'd3d11va',
-        'd3d11',
-        'd3d9',
-        'nvdec',
-        'nvdec_hevc',
-        'nvdec_h264',
-        'nvdec_h265',
-      ],
-    },
-  );
+  if (isDesktopPlatform) {
+    fvp.registerWith(
+      options: {
+        'platforms': ['linux', 'windows', 'macos'],
+        'video.decoders': ['auto', 'av1', 'hevc', 'h264', 'h265'],
+        'video.hwdec': [
+          'auto',
+          'dxva2',
+          'd3d11va',
+          'd3d11',
+          'd3d9',
+          'nvdec',
+          'nvdec_hevc',
+          'nvdec_h264',
+          'nvdec_h265',
+        ],
+      },
+    );
+  }
 
   // Resolve the secure store and stable device id before the app reads any
   // provider that depends on them (auth restore runs on first frame).
+  _startupStage = 'device identity storage';
   await store.delete('auth.accessToken');
   await store.delete('auth.refreshToken');
   final device = await loadOrCreateDeviceIdentity(store);
 
-  runApp(
-    ProviderScope(
-      overrides: [
-        keyValueStoreProvider.overrideWithValue(store),
-        deviceIdentityProvider.overrideWithValue(device),
-      ],
-      child: const ZauxoflixApp(),
-    ),
+  return ProviderScope(
+    overrides: [
+      keyValueStoreProvider.overrideWithValue(store),
+      deviceIdentityProvider.overrideWithValue(device),
+    ],
+    child: const ZauxoflixApp(),
   );
 }
 

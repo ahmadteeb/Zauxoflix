@@ -21,7 +21,9 @@ class MainActivity : FlutterActivity() {
     }
 
     private fun isTvDevice(): Boolean {
-        if (packageManager.hasSystemFeature(PackageManager.FEATURE_LEANBACK)) return true
+        if (packageManager.hasSystemFeature(PackageManager.FEATURE_LEANBACK) ||
+            packageManager.hasSystemFeature("android.hardware.type.television") ||
+            packageManager.hasSystemFeature("amazon.hardware.fire_tv")) return true
         val uiModeManager = getSystemService(Context.UI_MODE_SERVICE) as UiModeManager
         return uiModeManager.currentModeType == Configuration.UI_MODE_TYPE_TELEVISION
     }

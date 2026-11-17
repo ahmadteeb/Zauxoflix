@@ -5,23 +5,32 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../app_platform.dart';
+
 enum FormFactor { mobile, tablet, desktop, tv }
 
-/// True on TV devices. Seeded from --dart-define=TV_MODE=true (still honored
-/// for desktop testing) and upgraded at startup by [detectTvDevice], which
-/// asks Android whether the device is a leanback/television build.
-bool kTvBuild = const bool.fromEnvironment('TV_MODE');
+/// Automatically enabled on Tizen/webOS and detected on Android at startup.
+/// --dart-define=TV_MODE=true remains available for desktop TV UI testing.
+bool kTvBuild =
+    isTizenPlatform || isWebOsPlatform || const bool.fromEnvironment('TV_MODE');
 
 /// Runs once in main() before the first frame so [kTvBuild] is settled before
 /// any layout or focus decision reads it. Best-effort: a missing channel
-/// (e.g. tests) just keeps the compile-time value.
+/// (e.g. tests) keeps the initial runtime/build setting.
 Future<void> detectTvDevice() async {
   if (kTvBuild || kIsWeb || !Platform.isAndroid) return;
+  kTvBuild = await readAndroidTvMode();
+}
+
+/// Native device capabilities distinguish TVs from phones and tablets.
+Future<bool> readAndroidTvMode() async {
   try {
     const channel = MethodChannel('zauxoflix/device');
-    kTvBuild = await channel.invokeMethod<bool>('isTv') ?? false;
-  } on Object {
-    // Keep the compile-time default.
+    return await channel.invokeMethod<bool>('isTv') ?? false;
+  } on MissingPluginException {
+    return false;
+  } on PlatformException {
+    return false;
   }
 }
 

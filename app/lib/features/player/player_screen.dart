@@ -11,6 +11,7 @@ import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:window_manager/window_manager.dart';
 
 import '../../core/responsive/form_factor.dart';
+import '../../core/app_platform.dart';
 import '../../core/theme/app_theme.dart';
 import '../../data/backend/backend_providers.dart';
 import '../../data/backend/remote_models.dart';
@@ -147,8 +148,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   bool get _playlist => widget.args.items.length > 1;
 
   // fvp track extensions throw unless the mdk backend is active (desktop).
-  static final bool _fvpBackend =
-      Platform.isLinux || Platform.isWindows || Platform.isMacOS;
+  static final bool _fvpBackend = isDesktopPlatform;
 
   @override
   void initState() {

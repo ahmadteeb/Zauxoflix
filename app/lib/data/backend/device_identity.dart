@@ -2,6 +2,7 @@ import 'dart:io';
 import 'dart:math';
 
 import '../../core/responsive/form_factor.dart';
+import '../../core/app_platform.dart';
 import 'key_value_store.dart';
 
 /// Stable per-install address for remote playback and device presence.
@@ -25,6 +26,8 @@ Future<DeviceIdentity> loadOrCreateDeviceIdentity(KeyValueStore store) async {
 }
 
 String currentPlatform() {
+  if (isTizenPlatform) return 'tizen';
+  if (isWebOsPlatform) return 'webos';
   if (kTvBuild) return 'androidtv';
   if (Platform.isAndroid) return 'android';
   if (Platform.isIOS) return 'ios';
