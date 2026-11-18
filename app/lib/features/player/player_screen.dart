@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -19,6 +20,7 @@ import '../../data/backend/remote_repository.dart';
 import '../remote/device_picker.dart';
 import '../remote/remote_control_screen.dart';
 import '../remote/remote_playback.dart';
+import 'player_volume.dart';
 
 class PlayerItem {
   const PlayerItem({
@@ -147,13 +149,26 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   bool get _hasNext => _index < widget.args.items.length - 1;
   bool get _playlist => widget.args.items.length > 1;
 
-  // fvp track extensions throw unless the mdk backend is active (desktop).
+  // fvp track extensions require the mdk backend.
   static final bool _fvpBackend = isFvpPlatform;
+
+  late final bool _lockLandscape =
+      !kTvBuild &&
+      (defaultTargetPlatform == TargetPlatform.android ||
+          defaultTargetPlatform == TargetPlatform.iOS);
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    if (_lockLandscape) {
+      unawaited(
+        SystemChrome.setPreferredOrientations(const [
+          DeviceOrientation.landscapeLeft,
+          DeviceOrientation.landscapeRight,
+        ]),
+      );
+    }
     WakelockPlus.enable();
     _remotePlayback = ref.read(remotePlaybackProvider.notifier);
     _remotePlayback.attachPlayer(this);
@@ -213,6 +228,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     });
     controller.addListener(_onControllerChanged);
     try {
+      // Store the gain before initialization so a new stream never starts loud.
+      await controller.setVolume(ref.read(playerVolumeProvider));
+      if (!mounted || gen != _generation) return;
       await controller.initialize();
       if (!mounted || gen != _generation) return;
       if (_fvpBackend) {
@@ -393,6 +411,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     _playFocusNode.dispose();
     _overlayScope.dispose();
     WakelockPlus.disable();
+    if (_lockLandscape) {
+      // Browsing has no orientation lock; return control to the device.
+      unawaited(SystemChrome.setPreferredOrientations(const []));
+    }
     // Don't strand the browse UI fullscreen after leaving the player.
     if (_fullscreen) unawaited(windowManager.setFullScreen(false));
     super.dispose();
@@ -802,6 +824,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                         node: _overlayScope,
                         child: _ControlsOverlay(
                           controller: controller,
+                          volume: ref.watch(playerVolumeProvider),
+                          onVolumeChanged: (volume) {
+                            ref.read(playerVolumeProvider.notifier).set(volume);
+                            unawaited(_controller?.setVolume(volume));
+                            _showControls();
+                          },
                           playFocusNode: _playFocusNode,
                           title: _item.title,
                           subtitle: _item.subtitle,
@@ -877,6 +905,8 @@ class _ControlsOverlay extends StatelessWidget {
   const _ControlsOverlay({
     required this.controller,
     required this.playFocusNode,
+    required this.volume,
+    required this.onVolumeChanged,
     required this.title,
     required this.subtitle,
     required this.live,
@@ -904,6 +934,8 @@ class _ControlsOverlay extends StatelessWidget {
 
   final VideoPlayerController? controller;
   final FocusNode playFocusNode;
+  final double volume;
+  final ValueChanged<double> onVolumeChanged;
   final String title;
   final String subtitle;
   final bool live;
@@ -1195,6 +1227,11 @@ class _ControlsOverlay extends StatelessWidget {
                     spacing: 8,
                     runSpacing: 8,
                     children: [
+                      PlayerVolumeButton(
+                        volume: volume,
+                        onChanged: onVolumeChanged,
+                        onInteraction: onInteraction,
+                      ),
                       TextButton.icon(
                         onPressed: onCycleFit,
                         icon: const Icon(

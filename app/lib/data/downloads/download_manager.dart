@@ -21,13 +21,31 @@ final downloadManagerProvider =
 /// Whether a tracked download is waiting its turn or actively transferring.
 enum DownloadPhase { queued, downloading }
 
-/// A tracked download's phase plus its 0..1 transfer fraction ([value] is only
-/// meaningful once [phase] is [DownloadPhase.downloading]).
+/// Live transfer measurements; a zero total means the server omitted its size.
 class DownloadProgress {
-  const DownloadProgress(this.phase, [this.value = 0]);
+  const DownloadProgress(
+    this.phase, {
+    this.receivedBytes = 0,
+    this.totalBytes = 0,
+    this.bytesPerSecond = 0,
+    this.elapsed = Duration.zero,
+  });
 
   final DownloadPhase phase;
-  final double value;
+  final int receivedBytes;
+  final int totalBytes;
+  final double bytesPerSecond;
+  final Duration elapsed;
+
+  double get value =>
+      totalBytes > 0 ? (receivedBytes / totalBytes).clamp(0.0, 1.0) : 0;
+
+  Duration? get remaining => totalBytes > 0 && bytesPerSecond > 0
+      ? Duration(
+          seconds: (math.max(0, totalBytes - receivedBytes) / bytesPerSecond)
+              .ceil(),
+        )
+      : null;
 }
 
 class _Job {
@@ -53,6 +71,7 @@ class _Job {
   /// Transient-failure retry bookkeeping. A dropped connection (e.g. the panel
   /// only allows one at a time and the user started watching) must not discard
   /// the download — it waits and resumes.
+  Duration elapsed = Duration.zero;
   int attempt = 0;
   DateTime readyAt = DateTime.now();
 }
@@ -191,7 +210,16 @@ class DownloadManager
       }
       // Transient (timeout, dropped/blocked connection, 5xx): keep the partial
       // file and try again later, resuming from where it stopped.
-      state = {...state, key: const DownloadProgress(DownloadPhase.queued)};
+      final progress = state[key];
+      state = {
+        ...state,
+        key: DownloadProgress(
+          DownloadPhase.queued,
+          receivedBytes: progress?.receivedBytes ?? 0,
+          totalBytes: progress?.totalBytes ?? 0,
+          elapsed: job.elapsed,
+        ),
+      };
       return _RunResult.retry;
     }
   }
@@ -235,22 +263,39 @@ class DownloadManager
         mode: resumed ? FileMode.writeOnlyAppend : FileMode.writeOnly,
       );
       var received = resumed ? existing : 0;
+      final offset = received;
+      final clock = Stopwatch()..start();
+      var lastUpdate = -250;
+      void publish() {
+        final milliseconds = clock.elapsedMilliseconds;
+        // Avoid rebuilding the downloads UI for every network chunk.
+        if (milliseconds - lastUpdate < 250 && received != total) return;
+        lastUpdate = milliseconds;
+        state = {
+          ...state,
+          key: DownloadProgress(
+            DownloadPhase.downloading,
+            receivedBytes: received,
+            totalBytes: total,
+            elapsed: job.elapsed + clock.elapsed,
+            bytesPerSecond: milliseconds >= 250
+                ? (received - offset) * 1000 / milliseconds
+                : 0,
+          ),
+        };
+      }
+
+      publish();
       try {
         await for (final chunk in response.data!.stream) {
           if (token.isCancelled) break;
           sink.add(chunk);
           received += chunk.length;
-          if (total > 0) {
-            state = {
-              ...state,
-              key: DownloadProgress(
-                DownloadPhase.downloading,
-                received / total,
-              ),
-            };
-          }
+          publish();
         }
       } finally {
+        clock.stop();
+        job.elapsed += clock.elapsed;
         await sink.flush();
         await sink.close();
       }
@@ -273,7 +318,7 @@ class DownloadManager
     final fromRange = slash == -1
         ? null
         : int.tryParse(range!.substring(slash + 1));
-    return fromRange ?? existing + contentLength;
+    return fromRange ?? (contentLength > 0 ? existing + contentLength : 0);
   }
 
   bool _isPermanent(Object e) {

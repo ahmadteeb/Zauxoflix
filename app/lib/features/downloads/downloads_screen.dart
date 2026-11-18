@@ -9,6 +9,7 @@ import '../../data/backend/remote_models.dart';
 import '../../data/db/app_database.dart';
 import '../../data/downloads/download_manager.dart';
 import '../../data/providers.dart';
+import 'download_progress_details.dart';
 import '../player/player_screen.dart';
 import '../remote/cast_session.dart';
 
@@ -16,18 +17,6 @@ import '../remote/cast_session.dart';
 /// finished ones play offline (with resume) and can be removed.
 class DownloadsScreen extends ConsumerWidget {
   const DownloadsScreen({super.key});
-
-  static String _size(int? bytes) {
-    if (bytes == null || bytes <= 0) return '';
-    const units = ['B', 'KB', 'MB', 'GB'];
-    var value = bytes.toDouble();
-    var unit = 0;
-    while (value >= 1024 && unit < units.length - 1) {
-      value /= 1024;
-      unit++;
-    }
-    return '${value.toStringAsFixed(unit == 0 ? 0 : 1)} ${units[unit]}';
-  }
 
   Future<void> _play(
     BuildContext context,
@@ -118,7 +107,7 @@ class DownloadsScreen extends ConsumerWidget {
     final queued = progress?.phase == DownloadPhase.queued;
     final meta = [
       if (primary == null && item.subtitle.isNotEmpty) item.subtitle,
-      _size(item.totalBytes),
+      if ((item.totalBytes ?? 0) > 0) downloadSize(item.totalBytes!),
     ].where((s) => s.isNotEmpty).join('  ·  ');
 
     return ListTile(
@@ -145,20 +134,7 @@ class DownloadsScreen extends ConsumerWidget {
                       ),
                     ),
                   )
-                : Padding(
-                    padding: const EdgeInsets.only(top: 6),
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(2),
-                      child: LinearProgressIndicator(
-                        value: progress?.value,
-                        minHeight: 4,
-                        backgroundColor: AppColors.surfaceLight,
-                        valueColor: const AlwaysStoppedAnimation(
-                          AppColors.primary,
-                        ),
-                      ),
-                    ),
-                  ))
+                : DownloadProgressDetails(progress: progress))
           : Text(
               meta,
               style: const TextStyle(
@@ -211,7 +187,7 @@ class DownloadsScreen extends ConsumerWidget {
       if (active > 0)
         '$active downloading'
       else if (totalBytes > 0)
-        _size(totalBytes),
+        downloadSize(totalBytes),
     ].join('  ·  ');
 
     return Card(
@@ -261,7 +237,6 @@ class DownloadsScreen extends ConsumerWidget {
     final db = ref.watch(databaseProvider);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Downloads')),
       body: source == null
           ? const Center(child: Text('No playlist configured.'))
           : StreamBuilder(

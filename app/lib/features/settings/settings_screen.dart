@@ -130,7 +130,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   ),
                   const SizedBox(height: 12),
                   OutlinedButton.icon(
-                    onPressed: () => context.push('/downloads'),
+                    onPressed: () => context.go('/downloads'),
                     icon: const Icon(Icons.folder_open_rounded, size: 18),
                     label: const Text('Manage downloads'),
                   ),

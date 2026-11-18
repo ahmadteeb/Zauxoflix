@@ -23,6 +23,13 @@ class AppShell extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final formFactor = formFactorOf(context, ref);
+    final mobileDestinations = [
+      ...appDestinations.take(4),
+      appDestinations.last,
+    ];
+    final mobileIndex = mobileDestinations.indexWhere(
+      (d) => d.path == appDestinations[navigationShell.currentIndex].path,
+    );
 
     return switch (formFactor) {
       FormFactor.mobile => Scaffold(
@@ -40,7 +47,7 @@ class AppShell extends ConsumerWidget {
                       size: 24,
                     ),
                     const SizedBox(width: 8),
-                    const Flexible(
+                    const Expanded(
                       child: Text(
                         'ZAUXOFLIX',
                         style: TextStyle(
@@ -51,7 +58,16 @@ class AppShell extends ConsumerWidget {
                         overflow: TextOverflow.ellipsis,
                       ),
                     ),
-                    const Spacer(),
+                    IconButton(
+                      tooltip: 'Search',
+                      onPressed: () => context.go('/search'),
+                      icon: const Icon(Icons.search_rounded),
+                    ),
+                    IconButton(
+                      tooltip: 'Downloads',
+                      onPressed: () => context.go('/downloads'),
+                      icon: const Icon(Icons.download_rounded),
+                    ),
                     const CastButton(),
                   ],
                 ),
@@ -66,39 +82,13 @@ class AppShell extends ConsumerWidget {
           ),
         ),
         bottomNavigationBar: NavigationBar(
-          selectedIndex: navigationShell.currentIndex.clamp(0, 4),
+          selectedIndex: mobileIndex < 0 ? 0 : mobileIndex,
           labelBehavior: NavigationDestinationLabelBehavior.onlyShowSelected,
-          onDestinationSelected: (index) async {
-            if (index < 4) {
-              _goBranch(index);
-              return;
-            }
-            final selected = await showModalBottomSheet<int>(
-              context: context,
-              builder: (context) => SafeArea(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    for (var i = 4; i < appDestinations.length; i++)
-                      ListTile(
-                        leading: Icon(appDestinations[i].icon),
-                        title: Text(appDestinations[i].label),
-                        selected: navigationShell.currentIndex == i,
-                        onTap: () => Navigator.pop(context, i),
-                      ),
-                  ],
-                ),
-              ),
-            );
-            if (selected != null && context.mounted) _goBranch(selected);
-          },
+          onDestinationSelected: (index) =>
+              _goBranch(appDestinations.indexOf(mobileDestinations[index])),
           destinations: [
-            for (final d in appDestinations.take(4))
+            for (final d in mobileDestinations)
               NavigationDestination(icon: Icon(d.icon), label: d.label),
-            const NavigationDestination(
-              icon: Icon(Icons.more_horiz_rounded),
-              label: 'More',
-            ),
           ],
         ),
       ),

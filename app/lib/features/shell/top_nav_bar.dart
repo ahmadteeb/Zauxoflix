@@ -88,7 +88,6 @@ class TopNavBar extends StatelessWidget {
                   ),
                 ),
               ),
-              if (!kTvBuild) ...[const SizedBox(width: 8), const CastButton()],
               for (
                 var i = appDestinations.length - iconOnlyDestinations;
                 i < appDestinations.length;
@@ -104,6 +103,7 @@ class TopNavBar extends StatelessWidget {
                   onSelect: () => onSelect(i),
                 ),
               ],
+              if (!kTvBuild) ...[const SizedBox(width: 8), const CastButton()],
             ],
           ),
         ),

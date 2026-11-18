@@ -5,6 +5,7 @@ import '../../core/theme/app_theme.dart';
 import '../../data/db/app_database.dart';
 import '../../data/downloads/download_manager.dart';
 import '../../data/providers.dart';
+import 'download_progress_details.dart';
 
 /// Action cycling through the download lifecycle:
 /// not downloaded → downloading (tap cancels) → downloaded (tap removes).
@@ -83,10 +84,12 @@ class DownloadButton extends ConsumerWidget {
         if (progress != null) {
           final queued = progress.phase == DownloadPhase.queued;
           final indicator = _DownloadRing(
-            // Queued and the initial pre-byte moment both show a spinner.
-            value: queued || progress.value <= 0 ? null : progress.value,
+            // Queued and unknown-size transfers show a spinner.
+            value: queued || progress.totalBytes <= 0 ? null : progress.value,
           );
-          final tooltip = queued ? 'Queued — tap to cancel' : 'Cancel download';
+          final tooltip = queued
+              ? 'Queued — tap to cancel'
+              : '${downloadProgressText(progress)}\nTap to cancel';
           if (compact) {
             return IconButton(
               tooltip: tooltip,
@@ -101,7 +104,11 @@ class DownloadButton extends ConsumerWidget {
               style: _style,
               icon: indicator,
               label: Text(
-                queued ? 'Queued' : '${(progress.value * 100).round()}%',
+                queued
+                    ? 'Queued'
+                    : progress.totalBytes > 0
+                    ? '${(progress.value * 100).floor()}%'
+                    : 'Downloading',
               ),
             ),
           );

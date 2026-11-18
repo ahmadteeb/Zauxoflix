@@ -14,6 +14,7 @@ import '../../data/db/app_database.dart';
 import '../../data/providers.dart';
 import '../browse/category_dropdown.dart';
 import '../player/player_screen.dart';
+import '../player/player_volume.dart';
 import '../remote/cast_session.dart';
 import '../shell/top_nav_bar.dart';
 
@@ -757,16 +758,16 @@ class _PreviewPane extends StatelessWidget {
   }
 }
 
-class _MiniPlayer extends StatefulWidget {
+class _MiniPlayer extends ConsumerStatefulWidget {
   const _MiniPlayer({super.key, required this.url});
 
   final String url;
 
   @override
-  State<_MiniPlayer> createState() => _MiniPlayerState();
+  ConsumerState<_MiniPlayer> createState() => _MiniPlayerState();
 }
 
-class _MiniPlayerState extends State<_MiniPlayer> {
+class _MiniPlayerState extends ConsumerState<_MiniPlayer> {
   late final VideoPlayerController _controller =
       VideoPlayerController.networkUrl(Uri.parse(widget.url));
   String? _error;
@@ -775,7 +776,11 @@ class _MiniPlayerState extends State<_MiniPlayer> {
   void initState() {
     super.initState();
     _controller
-        .initialize()
+        .setVolume(ref.read(playerVolumeProvider))
+        .then<void>((_) async {
+          if (!mounted) return;
+          await _controller.initialize();
+        })
         .then((_) {
           if (!mounted) return;
           setState(() {});
@@ -794,6 +799,9 @@ class _MiniPlayerState extends State<_MiniPlayer> {
 
   @override
   Widget build(BuildContext context) {
+    ref.listen(playerVolumeProvider, (_, volume) {
+      _controller.setVolume(volume);
+    });
     return Container(
       color: Colors.black,
       child: _error != null

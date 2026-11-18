@@ -14,8 +14,9 @@ const appDestinations = [
   AppDestination('Movies', Icons.movie_rounded, '/movies'),
   AppDestination('Series', Icons.video_library_rounded, '/series'),
   AppDestination('Search', Icons.search_rounded, '/search'),
+  AppDestination('Downloads', Icons.download_rounded, '/downloads'),
   AppDestination('Settings', Icons.settings_rounded, '/settings'),
 ];
 
 /// Trailing destinations rendered icon-only on the right of the top bar.
-const iconOnlyDestinations = 2;
+const iconOnlyDestinations = 3;

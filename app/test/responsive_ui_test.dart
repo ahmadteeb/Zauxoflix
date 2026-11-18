@@ -29,6 +29,7 @@ import 'package:zauxoflix/features/live/live_tv_screen.dart';
 import 'package:zauxoflix/features/search/search_screen.dart';
 import 'package:zauxoflix/features/settings/settings_screen.dart';
 import 'package:zauxoflix/features/shell/top_nav_bar.dart';
+import 'package:zauxoflix/features/shell/destinations.dart';
 import 'package:zauxoflix/features/source_setup/source_setup_screen.dart';
 import 'package:zauxoflix/main.dart';
 import 'support/auth_test_overrides.dart';
@@ -91,7 +92,10 @@ void main() {
           (_, next) {},
         );
         await container.read(activeSourceProvider.future);
-        final nodes = List.generate(6, (index) => FocusNode());
+        final nodes = List.generate(
+          appDestinations.length,
+          (index) => FocusNode(),
+        );
         final screens = <String, Widget>{
           'home': const HomeScreen(),
           'live': const LiveTvScreen(),
@@ -213,7 +217,7 @@ void main() {
     );
   }
   testWidgets('top navigation buttons are keyboard operable', (tester) async {
-    final nodes = List.generate(6, (index) => FocusNode());
+    final nodes = List.generate(appDestinations.length, (index) => FocusNode());
     var selected = -1;
     await tester.pumpWidget(
       ProviderScope(
@@ -229,6 +233,8 @@ void main() {
         ),
       ),
     );
+    await tester.tap(find.byTooltip('Downloads'));
+    expect(selected, appDestinations.indexWhere((d) => d.path == '/downloads'));
     nodes[0].requestFocus();
     await tester.pump();
     await tester.sendKeyEvent(LogicalKeyboardKey.enter);
@@ -242,79 +248,90 @@ void main() {
       node.dispose();
     }
   });
-  testWidgets('mobile More menu reaches Settings without covering content', (
-    tester,
-  ) async {
-    tester.view.physicalSize = const Size(375, 812);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
-    final db = AppDatabase.forTesting(NativeDatabase.memory());
-    await db.insertSource(
-      SourcesCompanion.insert(
-        name: 'Test',
-        serverUrl: 'https://provider.example/list.m3u',
-        username: '',
-        password: '',
-        sourceType: const Value(SourceType.m3u),
-      ),
-    );
-    final container = ProviderContainer(
-      overrides: [
-        authenticatedOverride,
-        databaseProvider.overrideWithValue(db),
-        packageInfoProvider.overrideWith(
-          (ref) async => PackageInfo(
-            appName: 'Zauxoflix',
-            packageName: 'app',
-            version: '1.0.0',
-            buildNumber: '1',
-          ),
+  testWidgets(
+    'mobile header actions and Settings navigation work across screen sizes',
+    (tester) async {
+      tester.view.physicalSize = const Size(375, 812);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final db = AppDatabase.forTesting(NativeDatabase.memory());
+      await db.insertSource(
+        SourcesCompanion.insert(
+          name: 'Test',
+          serverUrl: 'https://provider.example/list.m3u',
+          username: '',
+          password: '',
+          sourceType: const Value(SourceType.m3u),
         ),
-      ],
-    );
-    await tester.pumpWidget(
-      UncontrolledProviderScope(
-        container: container,
-        child: const ZauxoflixApp(),
-      ),
-    );
-    for (var i = 0; i < 8; i++) {
-      await tester.pump(const Duration(milliseconds: 100));
-    }
-    await tester.tap(find.text('More'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Settings'));
-    await tester.pumpAndSettle();
-    expect(find.byType(SettingsScreen), findsOneWidget);
-    expect(find.byType(NavigationDestination), findsNWidgets(5));
-    expect(tester.takeException(), isNull);
-    for (final size in [
-      const Size(320, 640),
-      const Size(844, 390),
-      const Size(1024, 600),
-      const Size(1440, 900),
-      const Size(600, 960),
-    ]) {
-      tester.view.physicalSize = size;
+      );
+      final container = ProviderContainer(
+        overrides: [
+          authenticatedOverride,
+          databaseProvider.overrideWithValue(db),
+          packageInfoProvider.overrideWith(
+            (ref) async => PackageInfo(
+              appName: 'Zauxoflix',
+              packageName: 'app',
+              version: '1.0.0',
+              buildNumber: '1',
+            ),
+          ),
+        ],
+      );
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: const ZauxoflixApp(),
+        ),
+      );
+      for (var i = 0; i < 8; i++) {
+        await tester.pump(const Duration(milliseconds: 100));
+      }
+      await tester.tap(find.byTooltip('Search'));
+      await tester.pumpAndSettle();
+      expect(find.byType(SearchScreen), findsOneWidget);
+      await tester.tap(find.byTooltip('Downloads'));
+      await tester.pumpAndSettle();
+      expect(find.byType(DownloadsScreen), findsOneWidget);
+      expect(find.byType(NavigationBar), findsOneWidget);
+      expect(find.text('More'), findsNothing);
+      await tester.tap(find.text('Settings'));
       await tester.pumpAndSettle();
       expect(find.byType(SettingsScreen), findsOneWidget);
       expect(
-        find.byType(NavigationBar),
-        size.width < 700 ? findsOneWidget : findsNothing,
+        tester.widget<NavigationBar>(find.byType(NavigationBar)).selectedIndex,
+        4,
       );
-      expect(
-        find.byType(TopNavBar),
-        size.width >= 700 ? findsOneWidget : findsNothing,
-      );
-      expect(tester.takeException(), isNull, reason: 'Shell resize to $size');
-    }
+      expect(find.byType(NavigationDestination), findsNWidgets(5));
+      expect(tester.takeException(), isNull);
+      for (final size in [
+        const Size(320, 640),
+        const Size(844, 390),
+        const Size(1024, 600),
+        const Size(1440, 900),
+        const Size(600, 960),
+      ]) {
+        tester.view.physicalSize = size;
+        await tester.pumpAndSettle();
+        expect(find.byType(SettingsScreen), findsOneWidget);
+        expect(
+          find.byType(NavigationBar),
+          size.width < 700 ? findsOneWidget : findsNothing,
+        );
+        expect(
+          find.byType(TopNavBar),
+          size.width >= 700 ? findsOneWidget : findsNothing,
+        );
+        expect(tester.takeException(), isNull, reason: 'Shell resize to $size');
+      }
 
-    await tester.pumpWidget(const SizedBox.shrink());
-    container.dispose();
-    await tester.pump(const Duration(seconds: 1));
-    await tester.runAsync(db.close);
-  });
+      await tester.pumpWidget(const SizedBox.shrink());
+      container.dispose();
+      await tester.pump(const Duration(seconds: 1));
+      await tester.runAsync(db.close);
+    },
+  );
 }
 
 class FixedForm extends FormFactorOverride {

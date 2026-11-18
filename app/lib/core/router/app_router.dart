@@ -174,10 +174,6 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         path: '/guide',
         pageBuilder: (_, state) => _risePage(state, const EpgGridScreen()),
       ),
-      GoRoute(
-        path: '/downloads',
-        pageBuilder: (_, state) => _risePage(state, const DownloadsScreen()),
-      ),
       // Not .indexedStack: its default container keeps inactive branches
       // focusable, so D-pad traversal (and the shell's focus restore) could
       // land on invisible offstage screens. This container excludes them.
@@ -219,6 +215,14 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           StatefulShellBranch(
             routes: [
               GoRoute(path: '/search', builder: (_, _) => const SearchScreen()),
+            ],
+          ),
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
+                path: '/downloads',
+                builder: (_, _) => const DownloadsScreen(),
+              ),
             ],
           ),
           StatefulShellBranch(
