@@ -293,7 +293,7 @@ supabase functions deploy tv-pairing --remote
 - **Supported Operating System**:
   - Android 5.0+ (ARM64, ARMv7, x86_64)
   - Android TV / Google TV / Fire TV
-  - iOS 12.0+
+  - iOS 13.0+
   - Linux (GTK 3.0+)
   - macOS 11.0+ (Apple Silicon & Intel)
   - Windows 10/11 (64-bit)
@@ -305,6 +305,7 @@ supabase functions deploy tv-pairing --remote
 Download pre-built application packages directly from [GitHub Releases](https://github.com/ahmadteeb/Zauxoflix/releases):
 
 - 🤖 **Android**: `Zauxoflix-<version>-android.apk` (Universal Phone, Tablet & Android TV APK)
+- 🍎 **iOS / iPadOS**: `Zauxoflix-<version>-ios-unsigned.ipa` (unsigned; sign before installation)
 - 🪟 **Windows**: `Zauxoflix-<version>-windows-x64.zip` (Portable 64-bit binary bundle)
 - 🍏 **macOS**: `Zauxoflix-<version>-macos.dmg` (Disk Image) & `Zauxoflix-<version>-macos.zip` (Universal Binary)
 - 🐧 **Linux**:
@@ -347,6 +348,21 @@ Zauxoflix includes a native 10-foot living room interface optimized for remote c
 1. Install the free **Downloader** app from the Google Play Store or Amazon Appstore on your TV.
 2. In TV Settings, navigate to **Security & Restrictions** and grant Downloader permission to **Install Unknown Apps**.
 3. Open Downloader, enter the download URL for **`Zauxoflix-<version>-android.apk`**, and follow the on-screen installation prompt.
+
+---
+
+### 🍎 iPhone & iPad (iOS / iPadOS)
+
+CI produces **`Zauxoflix-<version>-ios-unsigned.ipa`** for physical iPhones and iPads. The IPA contains the release app in `Payload/Runner.app`; it is not a simulator build. No Apple certificate, provisioning profile, or signing password is needed to build it in CI.
+
+**An unsigned IPA cannot be installed directly on a normal iPhone or iPad.** Sign it for your account/device before installation:
+
+1. Download the unsigned IPA from [GitHub Releases](https://github.com/ahmadteeb/Zauxoflix/releases).
+2. On macOS or Windows, use an IPA signing/install tool such as [Sideloadly](https://sideloadly.io/). Connect your device, trust the computer, select the IPA, and follow the tool's Apple account signing and installation instructions.
+3. Enable [Developer Mode](https://developer.apple.com/documentation/xcode/enabling-developer-mode-on-a-device) and trust the developer profile in device Settings if requested.
+4. Open Zauxoflix. Development signatures expire; refresh/re-sign using your signing tool when required. Keep the same signing identity and bundle identifier for updates.
+
+For your own development build on a Mac, open `app/ios/Runner.xcworkspace` in Xcode, select the Runner target, configure **Signing & Capabilities** with your team and a unique bundle identifier, then run on your connected device. Public distribution requires a separately signed release through TestFlight/App Store; the unsigned GitHub IPA is not an App Store submission. See [Apple's distribution guide](https://developer.apple.com/documentation/xcode/distributing-your-app-for-beta-testing-and-releases).
 
 ---
 
@@ -528,6 +544,16 @@ Pass the Supabase configuration flags along with semantic versioning parameters:
 flutter build apk --release --build-name=1.0.0 --build-number=1 \
   --dart-define=SUPABASE_URL=https://YOUR_PROJECT_REF.supabase.co \
   --dart-define=SUPABASE_ANON_KEY=YOUR_PUBLISHABLE_KEY
+
+# iOS device app (macOS with Xcode; unsigned)
+flutter build ios --release --no-codesign --build-name=1.0.0 --build-number=1 \
+  --dart-define=SUPABASE_URL=https://YOUR_PROJECT_REF.supabase.co \
+  --dart-define=SUPABASE_ANON_KEY=YOUR_PUBLISHABLE_KEY
+
+# Wrap the unsigned app in an IPA, matching CI (run from app/)
+mkdir -p build/ios/unsigned/Payload
+cp -R build/ios/iphoneos/Runner.app build/ios/unsigned/Payload/
+(cd build/ios/unsigned && zip -r -y ../Zauxoflix-v1.0.0-ios-unsigned.ipa Payload)
 
 # Linux Desktop
 flutter build linux --release --build-name=1.0.0 --build-number=1 \
