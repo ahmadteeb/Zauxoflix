@@ -53,3 +53,7 @@ bool get isDesktopPlatform =>
     !isTizenPlatform &&
     !isWebOsPlatform &&
     (Platform.isLinux || Platform.isWindows || Platform.isMacOS);
+
+/// Keep IPTV container support consistent across mobile and desktop.
+bool get isFvpPlatform =>
+    isDesktopPlatform || Platform.isIOS || Platform.isAndroid;

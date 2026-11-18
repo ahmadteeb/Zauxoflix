@@ -97,23 +97,12 @@ Future<Widget> _initializeApplication() async {
   _startupStage = 'platform initialization';
   await detectTvDevice();
   InputModality.attach();
-  // fvp backs video_player on desktop; Android/iOS keep the native players.
-  if (isDesktopPlatform) {
+  // Use libmdk for IPTV containers that AVPlayer cannot reliably open.
+  // TV runtimes must retain their platform-specific player implementations.
+  if (isFvpPlatform) {
     fvp.registerWith(
       options: {
-        'platforms': ['linux', 'windows', 'macos'],
-        'video.decoders': ['auto', 'av1', 'hevc', 'h264', 'h265'],
-        'video.hwdec': [
-          'auto',
-          'dxva2',
-          'd3d11va',
-          'd3d11',
-          'd3d9',
-          'nvdec',
-          'nvdec_hevc',
-          'nvdec_h264',
-          'nvdec_h265',
-        ],
+        'platforms': ['linux', 'windows', 'macos', 'ios', 'android'],
       },
     );
   }

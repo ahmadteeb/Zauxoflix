@@ -45,7 +45,12 @@
     <true/>
     <key>UIApplicationSupportsIndirectInputEvents</key>
     <true/>
-      <key>NSCameraUsageDescription</key>
+    <key>NSAppTransportSecurity</key>
+    <dict>
+      <key>NSAllowsArbitraryLoadsForMedia</key>
+      <true/>
+    </dict>
+    <key>NSCameraUsageDescription</key>
     <string>Scan the QR code on your TV to pair it with your Zauxoflix account.</string>
 </dict>
 </plist>

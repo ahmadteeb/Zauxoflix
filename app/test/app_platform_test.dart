@@ -103,12 +103,18 @@ void main() {
   });
 
   test('runtime identity selects compatible plugins and TV mode', () {
+    expect(
+      isFvpPlatform,
+      isDesktopPlatform || Platform.isIOS || Platform.isAndroid,
+    );
     if (isTizenPlatform) {
       expect(isDesktopPlatform, isFalse);
+      expect(isFvpPlatform, isFalse);
       expect(kTvBuild, isTrue);
       expect(currentPlatform(), 'tizen');
     } else if (isWebOsPlatform) {
       expect(isDesktopPlatform, isFalse);
+      expect(isFvpPlatform, isFalse);
       expect(kTvBuild, isTrue);
       expect(currentPlatform(), 'webos');
     } else {

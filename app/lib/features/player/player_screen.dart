@@ -83,8 +83,8 @@ class PlayerArgs {
 
 /// Fullscreen playback with custom overlay controls so the same UI works for
 /// D-pad, keyboard, touch and mouse. video_player is backed by fvp on desktop
-/// and the native players on Android/iOS; neither ships TV-focus-aware
-/// controls. Pops the index of the last played item so callers can sync
+/// and mobile, with platform players on TVs. These backends need custom
+/// TV-focus-aware controls. Pops the index of the last played item so callers can sync
 /// selection (e.g. live channel list).
 class PlayerScreen extends ConsumerStatefulWidget {
   const PlayerScreen({super.key, required this.args});
@@ -148,7 +148,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   bool get _playlist => widget.args.items.length > 1;
 
   // fvp track extensions throw unless the mdk backend is active (desktop).
-  static final bool _fvpBackend = isDesktopPlatform;
+  static final bool _fvpBackend = isFvpPlatform;
 
   @override
   void initState() {
@@ -483,7 +483,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   /// Toggles OS-window fullscreen on desktop. No-op elsewhere: the mobile/TV
   /// shell already runs immersive so there's no window chrome to hide.
   Future<void> _toggleFullscreen() async {
-    if (!_fvpBackend) return;
+    if (!isDesktopPlatform) return;
     final next = !_fullscreen;
     await windowManager.setFullScreen(next);
     if (!mounted) return;
@@ -614,7 +614,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     switch (event.logicalKey) {
       case LogicalKeyboardKey.escape || LogicalKeyboardKey.goBack:
         _handleBack();
-      case LogicalKeyboardKey.keyF when _fvpBackend:
+      case LogicalKeyboardKey.keyF when isDesktopPlatform:
         _toggleFullscreen();
       case LogicalKeyboardKey.space || LogicalKeyboardKey.mediaPlayPause:
         _togglePlay();
@@ -822,7 +822,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                           onPrev: () => _goTo(_index - 1),
                           onNext: () => _goTo(_index + 1),
                           onCycleFit: _cycleFit,
-                          showFullscreen: _fvpBackend,
+                          showFullscreen: isDesktopPlatform,
                           fullscreen: _fullscreen,
                           onToggleFullscreen: _toggleFullscreen,
                           onSelectSubtitle: _selectSubtitle,
