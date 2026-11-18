@@ -355,7 +355,23 @@ Zauxoflix includes a native 10-foot living room interface optimized for remote c
 
 CI produces **`Zauxoflix-<version>-ios-unsigned.ipa`** for physical iPhones and iPads. The IPA contains the release app in `Payload/Runner.app`; it is not a simulator build. No Apple certificate, provisioning profile, or signing password is needed to build it in CI.
 
-**An unsigned IPA cannot be installed directly on a normal iPhone or iPad.** Sign it for your account/device before installation:
+**An unsigned IPA cannot be installed directly on a normal iPhone or iPad.** Sign it before installation using one of the methods below.
+
+#### Method 1: AppleJR online signer (from your iPhone or iPad)
+
+1. Download **`Zauxoflix-<version>-ios-unsigned.ipa`** from [GitHub Releases](https://github.com/ahmadteeb/Zauxoflix/releases) and save it in the **Files** app. Keep the `.ipa` file intact.
+2. Open [AppleJR IPA Signer](https://applejr.net/#signer) in Safari on the device where you want to install Zauxoflix.
+3. AppleJR currently lists its **AppleJr DNS** profile as a prerequisite for this method. Review the profile before deciding whether to install it; it changes device network settings. If you do not want that profile, use Method 2 below. Apple's [configuration profile instructions](https://support.apple.com/102400) explain how to review and install downloaded profiles.
+4. Choose **Upload IPA**, tap the upload area, and select the downloaded Zauxoflix IPA from Files. This uploads the app to a third-party service; Zauxoflix does not operate AppleJR.
+5. Under **Select Certificate from Server**, choose an available, valid certificate you are authorized to use. If none is suitable, use Method 2.
+6. Tap **Sign IPA** and wait for signing to finish. Then tap **Install IPA** and accept the iOS installation prompt.
+7. Once installation finishes, open Zauxoflix from the Home Screen. If iOS reports an untrusted enterprise developer, follow the trust instructions below.
+
+For a manually installed enterprise-signed app, go to **Settings → General → VPN & Device Management**, select its developer, and establish trust only if you recognize and trust that developer. Depending on the iOS version, this may say **Trust** or **Allow & Restart**. Internet access is required for verification. See [Apple's enterprise app installation guide](https://support.apple.com/118254).
+
+If installation fails or the app later reports **Unable to Verify App**, its certificate or provisioning may be expired, revoked, or incompatible with your device. A DNS profile does not make an invalid certificate valid. Re-sign with a valid signing identity using an appropriate installation method; avoid deleting an existing installation until you have considered its local downloads and data. AppleJR availability and successful signing/installation are not guaranteed. This workflow has been checked against the site's controls, but has not been tested on a physical iOS device.
+
+#### Method 2: Sign and install using a computer
 
 1. Download the unsigned IPA from [GitHub Releases](https://github.com/ahmadteeb/Zauxoflix/releases).
 2. On macOS or Windows, use an IPA signing/install tool such as [Sideloadly](https://sideloadly.io/). Connect your device, trust the computer, select the IPA, and follow the tool's Apple account signing and installation instructions.
