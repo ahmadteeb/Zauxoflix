@@ -15,6 +15,7 @@ import 'package:zauxoflix/data/backend/provision_models.dart';
 import 'package:zauxoflix/data/backend/provision_repository.dart';
 import 'package:zauxoflix/data/backend/realtime_channel.dart';
 import 'package:zauxoflix/data/backend/sync_repository.dart';
+import 'package:zauxoflix/data/backend/user_cache.dart';
 import 'package:zauxoflix/data/db/app_database.dart';
 import 'package:zauxoflix/data/providers.dart';
 import 'package:zauxoflix/features/source_setup/source_setup_screen.dart';
@@ -45,8 +46,12 @@ class _Store implements KeyValueStore {
 class _Provision extends ProvisionRepository {
   _Provision(super.client, super.db);
   Future<SourcePayload?> response = Future.value(null);
+  final requested = Completer<void>();
   @override
-  Future<SourcePayload?> fetch() => response;
+  Future<SourcePayload?> fetch() {
+    if (!requested.isCompleted) requested.complete();
+    return response;
+  }
 }
 
 class _Realtime extends RealtimeChannel {
@@ -91,54 +96,186 @@ class _ControlledAuth extends AuthController {
 }
 
 void main() {
-  test(
-    'account stays restoring until both playlist fetch and catalog sync finish',
-    () async {
-      final db = AppDatabase.forTesting(NativeDatabase.memory());
-      final client = sb.SupabaseClient('https://example.supabase.co', 'test');
-      final payload = Completer<SourcePayload?>();
-      final provision = _Provision(client, db)..response = payload.future;
-      final sync = _Sync();
-      final container = ProviderContainer(
-        overrides: [
-          databaseProvider.overrideWithValue(db),
-          supabaseProvider.overrideWithValue(client),
-          keyValueStoreProvider.overrideWithValue(_Store()),
-          provisionRepositoryProvider.overrideWithValue(provision),
-          realtimeChannelProvider.overrideWithValue(_Realtime(client)),
-          syncRepositoryProvider.overrideWithValue(_SyncRepository(client, db)),
-          syncControllerProvider.overrideWith(() => sync),
-        ],
-      );
-      try {
-        final auth = container.read(authControllerProvider.notifier);
-        await Future<void>.delayed(Duration.zero);
-        final login = auth.completePairing(const LoginResult(user: _user));
-        await Future<void>.delayed(const Duration(milliseconds: 20));
-        expect(
-          (container.read(authControllerProvider) as Authenticated)
-              .sourceRestoring,
-          isTrue,
+  for (final otherAccount in [false, true]) {
+    test(
+      'initial catalog stays restoring; previous account cache: $otherAccount',
+      () async {
+        final db = AppDatabase.forTesting(NativeDatabase.memory());
+        final client = sb.SupabaseClient('https://example.supabase.co', 'test');
+        final store = _Store();
+        if (otherAccount) {
+          await UserCache(
+            store,
+          ).save(const BackendUser(id: 'other', email: 'other@example.com'));
+          final cachedId = await db.insertSource(_payload.toCompanion());
+          await db.markSynced(cachedId);
+        }
+        final payload = Completer<SourcePayload?>();
+        final provision = _Provision(client, db)..response = payload.future;
+        final sync = _Sync();
+        final container = ProviderContainer(
+          overrides: [
+            databaseProvider.overrideWithValue(db),
+            supabaseProvider.overrideWithValue(client),
+            keyValueStoreProvider.overrideWithValue(store),
+            provisionRepositoryProvider.overrideWithValue(provision),
+            realtimeChannelProvider.overrideWithValue(_Realtime(client)),
+            syncRepositoryProvider.overrideWithValue(
+              _SyncRepository(client, db),
+            ),
+            syncControllerProvider.overrideWith(() => sync),
+          ],
         );
-        payload.complete(_payload);
-        await sync.entered.future;
-        expect(
-          (container.read(authControllerProvider) as Authenticated)
-              .sourceRestoring,
-          isTrue,
+        try {
+          final auth = container.read(authControllerProvider.notifier);
+          await Future<void>.delayed(Duration.zero);
+          final login = auth.completePairing(const LoginResult(user: _user));
+          await provision.requested.future;
+          expect(
+            (container.read(authControllerProvider) as Authenticated)
+                .sourceRestoring,
+            isTrue,
+          );
+          payload.complete(_payload);
+          await sync.entered.future;
+          expect(
+            (container.read(authControllerProvider) as Authenticated)
+                .sourceRestoring,
+            isTrue,
+          );
+          sync.finish.complete();
+          await login;
+          final state = container.read(authControllerProvider) as Authenticated;
+          expect(state.sourceRestoring, isFalse);
+          expect(state.sourceRestoreFailed, isFalse);
+        } finally {
+          container.dispose();
+          await client.dispose();
+          await db.close();
+        }
+      },
+    );
+  }
+
+  for (final changed in [false, true]) {
+    test(
+      'cached catalog opens before refresh; changed playlist: $changed',
+      () async {
+        final db = AppDatabase.forTesting(NativeDatabase.memory());
+        final client = sb.SupabaseClient('https://example.supabase.co', 'test');
+        final store = _Store();
+        await UserCache(store).save(_user);
+        final sourceId = await db.insertSource(_payload.toCompanion());
+        await db.markSynced(sourceId);
+        final response = Completer<SourcePayload?>();
+        final provision = _Provision(client, db)..response = response.future;
+        final sync = _Sync();
+        final container = ProviderContainer(
+          overrides: [
+            databaseProvider.overrideWithValue(db),
+            supabaseProvider.overrideWithValue(client),
+            keyValueStoreProvider.overrideWithValue(store),
+            provisionRepositoryProvider.overrideWithValue(provision),
+            realtimeChannelProvider.overrideWithValue(_Realtime(client)),
+            syncRepositoryProvider.overrideWithValue(
+              _SyncRepository(client, db),
+            ),
+            syncControllerProvider.overrideWith(() => sync),
+          ],
         );
-        sync.finish.complete();
-        await login;
-        final state = container.read(authControllerProvider) as Authenticated;
-        expect(state.sourceRestoring, isFalse);
-        expect(state.sourceRestoreFailed, isFalse);
-      } finally {
-        container.dispose();
-        await client.dispose();
-        await db.close();
-      }
-    },
-  );
+        try {
+          final auth = container.read(authControllerProvider.notifier);
+          await Future<void>.delayed(Duration.zero);
+          await auth.completePairing(const LoginResult(user: _user));
+          expect(
+            (container.read(authControllerProvider) as Authenticated)
+                .sourceRestoring,
+            isFalse,
+          );
+          expect(response.isCompleted, isFalse);
+          response.complete(
+            changed
+                ? const SourcePayload(
+                    type: SourceType.m3u,
+                    serverUrl: 'https://new.example.test/list.m3u',
+                    username: '',
+                    password: '',
+                  )
+                : _payload,
+          );
+          await sync.entered.future;
+          expect(
+            (container.read(authControllerProvider) as Authenticated)
+                .sourceRestoring,
+            changed,
+          );
+          final refreshed = Completer<void>();
+          container.listen(authControllerProvider, (_, next) {
+            if (next is Authenticated &&
+                !next.sourceRestoring &&
+                sync.finish.isCompleted &&
+                !refreshed.isCompleted) {
+              refreshed.complete();
+            }
+          });
+          sync.finish.complete();
+          await refreshed.future;
+          final state = container.read(authControllerProvider) as Authenticated;
+          expect(state.sourceRestoreFailed, isFalse);
+          expect(
+            (await db.watchActiveSource().first)!.serverUrl,
+            changed ? 'https://new.example.test/list.m3u' : _payload.serverUrl,
+          );
+        } finally {
+          container.dispose();
+          await client.dispose();
+          await db.close();
+        }
+      },
+    );
+  }
+
+  test('offline background refresh keeps the cached catalog usable', () async {
+    final db = AppDatabase.forTesting(NativeDatabase.memory());
+    final client = sb.SupabaseClient('https://example.supabase.co', 'test');
+    final store = _Store();
+    await UserCache(store).save(_user);
+    final sourceId = await db.insertSource(_payload.toCompanion());
+    await db.markSynced(sourceId);
+    final response = Completer<SourcePayload?>();
+    final provision = _Provision(client, db)..response = response.future;
+    final container = ProviderContainer(
+      overrides: [
+        databaseProvider.overrideWithValue(db),
+        supabaseProvider.overrideWithValue(client),
+        keyValueStoreProvider.overrideWithValue(store),
+        provisionRepositoryProvider.overrideWithValue(provision),
+        realtimeChannelProvider.overrideWithValue(_Realtime(client)),
+        syncRepositoryProvider.overrideWithValue(_SyncRepository(client, db)),
+      ],
+    );
+    try {
+      final auth = container.read(authControllerProvider.notifier);
+      await Future<void>.delayed(Duration.zero);
+      await auth.completePairing(const LoginResult(user: _user));
+      final refreshed = Completer<void>();
+      container.listen(authControllerProvider, (_, next) {
+        if (next is Authenticated && !refreshed.isCompleted) {
+          refreshed.complete();
+        }
+      });
+      response.completeError(StateError('Network unavailable'));
+      await refreshed.future;
+      final state = container.read(authControllerProvider) as Authenticated;
+      expect(state.sourceRestoring, isFalse);
+      expect(state.sourceRestoreFailed, isFalse);
+      expect((await db.watchActiveSource().first)!.id, sourceId);
+    } finally {
+      container.dispose();
+      await client.dispose();
+      await db.close();
+    }
+  });
 
   test(
     'failed source fetch is not an empty account and can be retried',

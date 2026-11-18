@@ -210,10 +210,23 @@ class AuthController extends Notifier<AuthState> {
     }
     await cache.save(result.user);
     if (_disposed || generation != _generation) return;
-    state = Authenticated(result.user, sourceRestoring: true);
+    final cachedSource = previous?.id == result.user.id
+        ? await ref.read(databaseProvider).watchActiveSource().first
+        : null;
+    if (_disposed || generation != _generation) return;
+    final hasCachedCatalog = cachedSource?.lastSyncAt != null;
+    state = Authenticated(result.user, sourceRestoring: !hasCachedCatalog);
     ref.read(databaseProvider).syncSink = ref.read(syncRepositoryProvider);
     _timer?.cancel();
     ref.read(realtimeChannelProvider).stop();
+    if (hasCachedCatalog) {
+      unawaited(_finishSourceRestore(generation));
+    } else {
+      await _finishSourceRestore(generation);
+    }
+  }
+
+  Future<void> _finishSourceRestore(int generation) async {
     var failed = false;
     try {
       await _refreshSource(awaitCatalog: true);
@@ -280,6 +293,24 @@ class AuthController extends Notifier<AuthState> {
           await ref.read(databaseProvider).deleteSource(existing.id);
         }
       } else {
+        if (awaitCatalog) {
+          final existing = await ref
+              .read(databaseProvider)
+              .watchActiveSource()
+              .first;
+          if (_disposed ||
+              generation != _generation ||
+              state is! Authenticated) {
+            return;
+          }
+          if (existing == null || !payload.matches(existing)) {
+            // A changed playlist cannot reuse the previous catalog.
+            state = Authenticated(
+              (state as Authenticated).user,
+              sourceRestoring: true,
+            );
+          }
+        }
         final changed = await repository.applyProvisionedSource(payload);
         if (changed || awaitCatalog) {
           final source = await ref

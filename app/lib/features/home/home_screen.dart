@@ -122,7 +122,9 @@ class HomeScreen extends ConsumerWidget {
       stream: db.watchRecentMovies(source.id),
       builder: (context, moviesSnapshot) {
         if ((!moviesSnapshot.hasData && !moviesSnapshot.hasError) ||
-            (syncing && (moviesSnapshot.data?.isEmpty ?? true))) {
+            (syncing &&
+                source.lastSyncAt == null &&
+                (moviesSnapshot.data?.isEmpty ?? true))) {
           return _HomeSkeleton(formFactor: formFactor);
         }
         final movies = [
