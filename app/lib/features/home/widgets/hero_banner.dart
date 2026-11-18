@@ -5,6 +5,7 @@ import '../../../core/input/input_modality.dart';
 import '../../../core/models/media_item.dart';
 import '../../../core/responsive/form_factor.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/widgets/skeleton.dart';
 import '../../../core/tv/focusable.dart';
 
 class HeroBanner extends StatelessWidget {
@@ -13,12 +14,14 @@ class HeroBanner extends StatelessWidget {
     required this.item,
     required this.formFactor,
     this.metaLine = '',
+    this.loading = false,
     this.onPlay,
     this.inMyList = false,
     this.onToggleMyList,
   });
 
   final MediaItem item;
+  final bool loading;
   final FormFactor formFactor;
 
   /// "★ 7.2  ·  2019  ·  1h 52m  ·  Action" — below the title.
@@ -39,6 +42,57 @@ class HeroBanner extends StatelessWidget {
         (textScale - 1).clamp(0, 2) * 150;
     final gutter = formFactor.gutter;
     final titleSize = compact ? 32.0 : (size.width * 0.036).clamp(36.0, 64.0);
+
+    if (loading) {
+      return Semantics(
+        label: 'Loading featured content',
+        child: ExcludeSemantics(
+          child: SkeletonPulse(
+            child: SizedBox(
+              height: height,
+              width: double.infinity,
+              child: Padding(
+                padding: EdgeInsets.fromLTRB(gutter, 24, gutter, 28),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    const FractionallySizedBox(
+                      widthFactor: .7,
+                      child: SkeletonBox(height: 40),
+                    ),
+                    const SizedBox(height: 16),
+                    const FractionallySizedBox(
+                      widthFactor: .4,
+                      child: SkeletonBox(height: 16),
+                    ),
+                    const SizedBox(height: 20),
+                    const FractionallySizedBox(
+                      widthFactor: .8,
+                      child: SkeletonBox(height: 14),
+                    ),
+                    const SizedBox(height: 8),
+                    const FractionallySizedBox(
+                      widthFactor: .6,
+                      child: SkeletonBox(height: 14),
+                    ),
+                    const SizedBox(height: 24),
+                    const Wrap(
+                      spacing: 12,
+                      runSpacing: 12,
+                      children: [
+                        SkeletonBox(width: 120, height: 48),
+                        SkeletonBox(width: 96, height: 48),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
 
     // Background and text crossfade when the featured item rotates; the
     // buttons stay outside the switcher so their focus nodes survive.

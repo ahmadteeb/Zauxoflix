@@ -299,3 +299,45 @@ class EmptyState extends StatelessWidget {
     );
   }
 }
+
+/// Channel logos and programme labels while the first Live TV read resolves.
+class ChannelListSkeleton extends StatelessWidget {
+  const ChannelListSkeleton({super.key});
+
+  @override
+  Widget build(BuildContext context) => Semantics(
+    label: 'Loading channels',
+    child: ExcludeSemantics(
+      child: SkeletonPulse(
+        child: ListView.separated(
+          physics: const NeverScrollableScrollPhysics(),
+          padding: const EdgeInsets.all(16),
+          itemCount: 8,
+          separatorBuilder: (_, _) => const SizedBox(height: 16),
+          itemBuilder: (_, _) => const Row(
+            children: [
+              SkeletonBox(width: 48, height: 48),
+              SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    FractionallySizedBox(
+                      widthFactor: .7,
+                      child: SkeletonBox(height: 14),
+                    ),
+                    SizedBox(height: 10),
+                    FractionallySizedBox(
+                      widthFactor: .45,
+                      child: SkeletonBox(height: 10),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    ),
+  );
+}

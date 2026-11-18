@@ -5,6 +5,7 @@ import '../../core/models/media_item.dart';
 import '../../core/responsive/form_factor.dart';
 import '../../core/theme/app_theme.dart';
 import '../../data/db/app_database.dart';
+import '../../data/backend/backend_providers.dart';
 import '../../data/providers.dart';
 import '../../data/xtream/xtream_models.dart';
 import '../details/media_navigation.dart';
@@ -88,17 +89,42 @@ class HomeScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final formFactor = formFactorOf(context, ref);
+    final auth = ref.watch(authControllerProvider);
+    if (auth is Authenticated && auth.sourceRestoreFailed) {
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text(
+              'Unable to restore your playlist. Check your connection.',
+            ),
+            const SizedBox(height: 16),
+            FilledButton(
+              onPressed: () => ref
+                  .read(authControllerProvider.notifier)
+                  .retrySourceRestore(),
+              child: const Text('Retry'),
+            ),
+          ],
+        ),
+      );
+    }
+    if (auth is Authenticated && auth.sourceRestoring) {
+      return _HomeSkeleton(formFactor: formFactor);
+    }
     final source = ref.watch(activeSourceProvider).value;
     final db = ref.watch(databaseProvider);
+    final syncing = ref.watch(syncControllerProvider) is SyncRunning;
 
-    if (source == null) {
-      // Router redirects to setup; avoid flashing mock content meanwhile.
-      return const SizedBox.shrink();
-    }
+    if (source == null) return _HomeSkeleton(formFactor: formFactor);
 
     return StreamBuilder<List<Movie>>(
       stream: db.watchRecentMovies(source.id),
       builder: (context, moviesSnapshot) {
+        if ((!moviesSnapshot.hasData && !moviesSnapshot.hasError) ||
+            (syncing && (moviesSnapshot.data?.isEmpty ?? true))) {
+          return _HomeSkeleton(formFactor: formFactor);
+        }
         final movies = [
           for (final m in moviesSnapshot.data ?? const <Movie>[])
             MediaItem(
@@ -147,6 +173,7 @@ class HomeScreen extends ConsumerWidget {
               builder: (context, favSnapshot) {
                 final inList = favSnapshot.data ?? false;
                 return HeroBanner(
+                  loading: !moviesSnapshot.hasData && !moviesSnapshot.hasError,
                   item: hero,
                   formFactor: formFactor,
                   metaLine: heroMeta,
@@ -280,4 +307,30 @@ class HomeScreen extends ConsumerWidget {
       },
     );
   }
+}
+
+class _HomeSkeleton extends StatelessWidget {
+  const _HomeSkeleton({required this.formFactor});
+
+  final FormFactor formFactor;
+
+  @override
+  Widget build(BuildContext context) => ListView(
+    padding: const EdgeInsets.only(bottom: 32),
+    children: [
+      HeroBanner(item: _welcomeHero, formFactor: formFactor, loading: true),
+      for (final (title, wide) in const [
+        ('Recently Added Movies', false),
+        ('New Series', false),
+        ('Live Channels', true),
+      ])
+        ContentRail(
+          title: title,
+          items: const [],
+          formFactor: formFactor,
+          loading: true,
+          wide: wide,
+        ),
+    ],
+  );
 }

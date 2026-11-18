@@ -257,7 +257,16 @@ class _LiveTvScreenState extends ConsumerState<LiveTvScreen> {
               c,
         ];
         _channels = channels;
-        if (!snapshot.hasData) return const SizedBox.shrink();
+        if (!snapshot.hasData && !snapshot.hasError) {
+          return const ChannelListSkeleton();
+        }
+        if (snapshot.hasError) {
+          return const EmptyState(
+            icon: Icons.live_tv_rounded,
+            title: 'Unable to load channels',
+            message: 'Try reopening Live TV.',
+          );
+        }
         if (channels.isEmpty) {
           return EmptyState(
             icon: Icons.live_tv_rounded,

@@ -99,8 +99,20 @@ class AuthLoading extends AuthState {
 }
 
 class Authenticated extends AuthState {
-  const Authenticated(this.user);
+  const Authenticated(
+    this.user, {
+    this.sourceRestoring = false,
+    this.sourceRestoreFailed = false,
+  });
   final BackendUser user;
+  final bool sourceRestoring;
+  final bool sourceRestoreFailed;
+
+  Authenticated withUser(BackendUser user) => Authenticated(
+    user,
+    sourceRestoring: sourceRestoring,
+    sourceRestoreFailed: sourceRestoreFailed,
+  );
 }
 
 class Unauthenticated extends AuthState {
@@ -117,6 +129,7 @@ class AuthController extends Notifier<AuthState> {
   bool _reconciling = false;
   bool _reconcileAgain = false;
   bool _refreshing = false;
+  Completer<void>? _refreshDone;
   bool _refreshAgain = false;
   int _generation = 0;
 
@@ -133,7 +146,9 @@ class AuthController extends Notifier<AuthState> {
             } else if (event.event == sb.AuthChangeEvent.userUpdated &&
                 state is Authenticated) {
               final user = event.session?.user;
-              if (user != null) state = Authenticated(userProfile(user));
+              if (user != null) {
+                state = (state as Authenticated).withUser(userProfile(user));
+              }
             }
           },
           onError: (Object error, StackTrace stack) {
@@ -195,15 +210,31 @@ class AuthController extends Notifier<AuthState> {
     }
     await cache.save(result.user);
     if (_disposed || generation != _generation) return;
-    state = Authenticated(result.user);
+    state = Authenticated(result.user, sourceRestoring: true);
     ref.read(databaseProvider).syncSink = ref.read(syncRepositoryProvider);
-    ref.read(realtimeChannelProvider).start(_onRealtimeEvent);
     _timer?.cancel();
+    ref.read(realtimeChannelProvider).stop();
+    var failed = false;
+    try {
+      await _refreshSource(awaitCatalog: true);
+    } catch (_) {
+      failed = true;
+    }
+    if (_disposed || generation != _generation) return;
+    final user = (state as Authenticated).user;
+    state = Authenticated(user, sourceRestoreFailed: failed);
+    ref.read(realtimeChannelProvider).start(_onRealtimeEvent);
     _timer = Timer.periodic(
       const Duration(minutes: 2),
       (_) => unawaited(_refreshSource()),
     );
-    await _refreshSource(awaitCatalog: true);
+  }
+
+  Future<void> retrySourceRestore() async {
+    final current = state;
+    if (current is Authenticated && !current.sourceRestoring) {
+      await _promoteSession(LoginResult(user: current.user));
+    }
   }
 
   void _onRealtimeEvent(String type, Map<String, dynamic> data) {
@@ -223,10 +254,16 @@ class AuthController extends Notifier<AuthState> {
 
   Future<void> _refreshSource({bool awaitCatalog = false}) async {
     if (_refreshing) {
+      if (awaitCatalog) {
+        await _refreshDone!.future;
+        if (_disposed || state is! Authenticated) return;
+        return _refreshSource(awaitCatalog: true);
+      }
       _refreshAgain = true;
       return;
     }
     _refreshing = true;
+    _refreshDone = Completer<void>();
     final generation = _generation;
     try {
       final repository = ref.read(provisionRepositoryProvider);
@@ -250,15 +287,28 @@ class AuthController extends Notifier<AuthState> {
               .watchActiveSource()
               .first;
           if (source != null) {
-            await ref.read(syncControllerProvider.notifier).syncSource(source);
+            final synced = await ref
+                .read(syncControllerProvider.notifier)
+                .syncSource(source);
+            if (!synced && awaitCatalog && source.lastSyncAt == null) {
+              throw StateError('Initial catalog sync failed');
+            }
           }
         }
       }
       await _reconcile();
     } catch (_) {
-      /* Offline: keep the cached playlist and retry later. */
+      // Keep offline accounts usable, but do not mistake a failed fetch for no source.
+      if (awaitCatalog && !_disposed && generation == _generation) {
+        final cached = await ref
+            .read(databaseProvider)
+            .watchActiveSource()
+            .first;
+        if (cached?.lastSyncAt == null) rethrow;
+      }
     } finally {
       _refreshing = false;
+      _refreshDone!.complete();
       if (_refreshAgain && !_disposed && state is Authenticated) {
         _refreshAgain = false;
         unawaited(_refreshSource());
@@ -298,7 +348,8 @@ class AuthController extends Notifier<AuthState> {
         .read(authRepositoryProvider)
         .updateProfile(firstName: firstName, lastName: lastName, phone: phone);
     await ref.read(userCacheProvider).save(user);
-    state = Authenticated(user);
+    final current = state;
+    if (current is Authenticated) state = current.withUser(user);
   }
 
   Future<void> changePassword({

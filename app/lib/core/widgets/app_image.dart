@@ -2,6 +2,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 
 import '../theme/app_theme.dart';
+import 'skeleton.dart';
 
 /// Disk-cached network image with a loading placeholder and error fallback.
 /// Pass [memCacheWidth] to downscale in the decoder — full-size posters blow
@@ -37,15 +38,8 @@ class AppImage extends StatelessWidget {
       fadeInDuration: const Duration(milliseconds: 180),
       fadeOutDuration: const Duration(milliseconds: 120),
       filterQuality: FilterQuality.low,
-      placeholder: (_, _) => ColoredBox(
-        color: AppColors.surfaceLight,
-        child: Center(
-          child: Icon(
-            Icons.image_outlined,
-            size: placeholderIconSize,
-            color: AppColors.textSecondary.withValues(alpha: 0.35),
-          ),
-        ),
+      placeholder: (_, _) => SkeletonPulse(
+        child: SkeletonBox(width: width, height: height, radius: 0),
       ),
       errorWidget: (_, _, _) =>
           errorWidget ??

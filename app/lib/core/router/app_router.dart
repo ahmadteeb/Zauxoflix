@@ -103,6 +103,12 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         const preAuth = {'/login', '/register', '/pair'};
         return preAuth.contains(loc) ? null : '/login';
       }
+      // A local empty source is inconclusive until account restoration finishes.
+      if (authed.sourceRestoring || authed.sourceRestoreFailed) {
+        return loc == '/home' ? null : '/home';
+      }
+      if (loc == '/setup' && sourceState.value.value != null) return '/home';
+
       if (loc == '/splash' ||
           loc == '/login' ||
           loc == '/register' ||
