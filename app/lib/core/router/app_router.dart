@@ -107,7 +107,6 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       if (authed.sourceRestoring || authed.sourceRestoreFailed) {
         return loc == '/home' ? null : '/home';
       }
-      if (loc == '/setup' && sourceState.value.value != null) return '/home';
 
       if (loc == '/splash' ||
           loc == '/login' ||

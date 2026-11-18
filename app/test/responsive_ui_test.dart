@@ -305,6 +305,16 @@ void main() {
       );
       expect(find.byType(NavigationDestination), findsNWidgets(5));
       expect(tester.takeException(), isNull);
+      final change = find.widgetWithText(OutlinedButton, 'Change');
+      tester.widget<OutlinedButton>(change).onPressed!();
+      await tester.pumpAndSettle();
+      expect(find.byType(SourceSetupScreen), findsOneWidget);
+      final cancel = find.text('Cancel');
+      await tester.ensureVisible(cancel);
+      await tester.tap(cancel);
+      await tester.pumpAndSettle();
+      expect(find.byType(SettingsScreen), findsOneWidget);
+      expect(find.byType(SourceSetupScreen), findsNothing);
       for (final size in [
         const Size(320, 640),
         const Size(844, 390),
