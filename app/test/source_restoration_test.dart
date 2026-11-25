@@ -60,8 +60,12 @@ class _Realtime extends RealtimeChannel {
         client,
         const DeviceIdentity(deviceId: 'device', platform: 'linux'),
       );
+  late void Function(String, Map<String, dynamic>) onEvent;
   @override
-  void start(void Function(String, Map<String, dynamic>) onEvent) {}
+  void start(void Function(String, Map<String, dynamic>) onEvent) {
+    this.onEvent = onEvent;
+  }
+
   @override
   void stop() {}
 }
@@ -78,7 +82,7 @@ class _Sync extends SyncController {
   @override
   SyncState build() => const SyncIdle();
   @override
-  Future<bool> syncSource(Source source) async {
+  Future<bool> syncSource(Source source, {bool waitForGuide = true}) async {
     state = const SyncRunning('Loading catalog');
     entered.complete();
     await finish.future;
@@ -320,6 +324,63 @@ void main() {
     },
   );
 
+  test(
+    'reconnect retries a previously unsynced playlist and clears the Home error',
+    () async {
+      final db = AppDatabase.forTesting(NativeDatabase.memory());
+      final client = sb.SupabaseClient('https://example.supabase.co', 'test');
+      final failed = Completer<SourcePayload?>();
+      final provision = _Provision(client, db)..response = failed.future;
+      final realtime = _Realtime(client);
+      final sync = _Sync();
+      final container = ProviderContainer(
+        overrides: [
+          databaseProvider.overrideWithValue(db),
+          supabaseProvider.overrideWithValue(client),
+          keyValueStoreProvider.overrideWithValue(_Store()),
+          provisionRepositoryProvider.overrideWithValue(provision),
+          realtimeChannelProvider.overrideWithValue(realtime),
+          syncRepositoryProvider.overrideWithValue(_SyncRepository(client, db)),
+          syncControllerProvider.overrideWith(() => sync),
+        ],
+      );
+      try {
+        final auth = container.read(authControllerProvider.notifier);
+        await Future<void>.delayed(Duration.zero);
+        final login = auth.completePairing(const LoginResult(user: _user));
+        await provision.requested.future;
+        failed.completeError(StateError('offline'));
+        await login;
+        expect(
+          (container.read(authControllerProvider) as Authenticated)
+              .sourceRestoreFailed,
+          isTrue,
+        );
+        final id = await db.insertSource(_payload.toCompanion());
+        provision.response = Future.value(_payload);
+        final ready = Completer<void>();
+        container.listen(authControllerProvider, (_, next) {
+          if (next is Authenticated &&
+              !next.sourceRestoring &&
+              !next.sourceRestoreFailed &&
+              !ready.isCompleted) {
+            ready.complete();
+          }
+        });
+        realtime.onEvent('provision', {});
+        await sync.entered.future;
+        sync.finish.complete();
+        await ready.future;
+        expect((await db.watchActiveSource().first)!.id, id);
+        expect((await db.watchActiveSource().first)!.lastSyncAt, isNotNull);
+      } finally {
+        container.dispose();
+        await client.dispose();
+        await db.close();
+      }
+    },
+  );
+
   testWidgets(
     'empty local database shows skeletons until restoration confirms no playlist',
     (tester) async {
@@ -356,7 +417,6 @@ void main() {
       expect(find.byType(SourceSetupScreen), findsOneWidget);
       await tester.pumpWidget(const SizedBox());
       container.dispose();
-      router.dispose();
       await db.close();
     },
   );

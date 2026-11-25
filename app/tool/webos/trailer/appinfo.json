@@ -1,0 +1,12 @@
+{
+  "id": "com.flutter.app.zauxoflix.trailer",
+  "version": "0.1.0",
+  "vendor": "Zauxoflix",
+  "type": "web",
+  "main": "index.html",
+  "title": "Zauxoflix Trailers",
+  "icon": "icon.png",
+  "visible": false,
+  "disableBackHistoryAPI": true,
+  "requiredACG": ["application.launcher"]
+}

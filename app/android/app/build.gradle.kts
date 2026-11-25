@@ -19,6 +19,13 @@ android {
         jvmTarget = JavaVersion.VERSION_17.toString()
     }
 
+    externalNativeBuild {
+        cmake {
+            path = file("src/main/cpp/CMakeLists.txt")
+            version = "3.22.1"
+        }
+    }
+
     defaultConfig {
         // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
         applicationId = "com.zauxoflix.zauxoflix"

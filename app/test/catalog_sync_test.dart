@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -83,15 +84,57 @@ void main() {
 
   late HttpServer server;
   late AppDatabase db;
+  late Map<String, Object> responses;
+  late String xml;
+  late Map<String, String> tags;
+  late Map<String, String?> conditionalRequests;
+
+  String? playlist;
+  Completer<void>? guideRequested, allowGuide;
+  const goodGuide =
+      '<tv><programme start="20200101000000" stop="20990101000000" channel="news24.example"><title>Last good guide</title></programme></tv>';
 
   setUp(() async {
     server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
-    server.listen((request) {
-      final action = request.uri.queryParameters['action'] ?? '';
+    responses = Map.of(_responses);
+    xml = goodGuide;
+    tags = {};
+    conditionalRequests = {};
+    playlist = null;
+    guideRequested = allowGuide = null;
+    server.listen((request) async {
+      if (request.uri.path == '/xmltv.php') {
+        guideRequested?.complete();
+        await allowGuide?.future;
+        request.response.write(xml);
+        await request.response.close();
+        return;
+      }
+      final action = request.uri.queryParameters['action'] ?? request.uri.path;
+      final tag = tags[action];
+      if (tag != null) {
+        final sent = request.headers.value('if-none-match');
+        conditionalRequests[action] = sent;
+        request.response.headers.set('etag', tag);
+        if (sent == tag) {
+          request.response.statusCode = HttpStatus.notModified;
+          await request.response.close();
+          return;
+        }
+      }
+      if (request.uri.path == '/list.m3u') {
+        request.response.write(playlist);
+        await request.response.close();
+        return;
+      }
       request.response
         ..headers.contentType = ContentType.json
-        ..write(jsonEncode(_responses[action] ?? []));
-      request.response.close();
+        ..write(
+          jsonEncode(
+            responses[action == '/player_api.php' ? '' : action] ?? [],
+          ),
+        );
+      await request.response.close();
     });
     db = AppDatabase.forTesting(NativeDatabase.memory());
   });
@@ -182,6 +225,139 @@ void main() {
     final counts3 = await db.catalogCounts(id);
     expect((counts3.live, counts3.movies, counts3.series), (0, 0, 0));
   });
+
+  Future<Source> addTestSource() async {
+    await db.insertSource(
+      SourcesCompanion.insert(
+        name: 'test',
+        serverUrl: 'http://127.0.0.1:${server.port}',
+        username: 'u',
+        password: 'p',
+      ),
+    );
+    return (await db.watchActiveSource().first)!;
+  }
+
+  test(
+    'late provider error preserves all sections and valid empty arrays can replace them',
+    () async {
+      final source = await addTestSource();
+      final sync = CatalogSyncService(db);
+      await sync.syncAll(source);
+      final timestamp = (await db.watchActiveSource().first)!.lastSyncAt;
+      responses['get_vod_streams'] = [];
+      responses['get_series'] = {'error': 'temporary outage'};
+      await expectLater(sync.syncAll(source), throwsFormatException);
+      expect((await db.watchMovies(source.id).first).single.streamId, 201);
+      expect((await db.watchSeries(source.id).first).single.seriesId, 301);
+      expect((await db.watchActiveSource().first)!.lastSyncAt, timestamp);
+      responses['get_series'] = [
+        {'error': 'invalid listing'},
+      ];
+      await expectLater(sync.syncAll(source), throwsFormatException);
+      expect((await db.watchMovies(source.id).first).single.streamId, 201);
+      responses['get_series'] = [];
+      await sync.syncAll(source);
+      expect(await db.watchMovies(source.id).first, isEmpty);
+      expect(await db.watchSeries(source.id).first, isEmpty);
+    },
+  );
+
+  test(
+    'catalog is readable while guide loads and a truncated guide rolls back even after a batch',
+    () async {
+      final source = await addTestSource();
+      final sync = CatalogSyncService(db);
+      await sync.syncAll(source);
+      final programme = goodGuide.substring(4, goodGuide.length - 5);
+      xml = '<tv>${List.filled(2001, programme).join()}';
+      guideRequested = Completer<void>();
+      allowGuide = Completer<void>();
+      responses['get_vod_streams'] = [];
+      final refresh = sync.syncAll(source);
+      await guideRequested!.future;
+      try {
+        expect(await db.watchMovies(source.id).first, isEmpty);
+        expect(
+          (await db.select(db.epgProgrammes).get()).single.title,
+          'Last good guide',
+        );
+      } finally {
+        allowGuide!.complete();
+        await refresh;
+      }
+      expect(
+        (await db.select(db.epgProgrammes).get()).single.title,
+        'Last good guide',
+      );
+    },
+  );
+
+  test(
+    'partial conditional responses publish only changed sections and failed versions are retried',
+    () async {
+      final source = await addTestSource();
+      final sync = CatalogSyncService(db);
+      tags = {for (final action in responses.keys) action: '"one"'};
+      await sync.syncAll(source);
+      tags['get_vod_streams'] = '"two"';
+      responses['get_vod_streams'] = [];
+      tags['get_series'] = '"broken"';
+      responses['get_series'] = {'error': 'outage'};
+      await expectLater(sync.syncAll(source), throwsFormatException);
+      expect((await db.watchMovies(source.id).first).single.streamId, 201);
+      tags['get_series'] = '"one"';
+      await sync.syncAll(source);
+      expect(conditionalRequests['get_vod_streams'], '"one"');
+      expect((await db.watchSeries(source.id).first).single.seriesId, 301);
+      expect(await db.watchMovies(source.id).first, isEmpty);
+      await sync.syncAll(source);
+      expect(conditionalRequests['get_vod_streams'], '"two"');
+      expect(
+        await db.watchCategories(source.id, CatalogKind.live).first,
+        hasLength(2),
+      );
+      expect(
+        (await db.select(db.epgProgrammes).get()).single.title,
+        'Last good guide',
+      );
+    },
+  );
+
+  test(
+    'first M3U sync uses the discovered guide without changing provisioned settings',
+    () async {
+      final base = 'http://127.0.0.1:${server.port}';
+      tags['/list.m3u'] = '"list"';
+      playlist =
+          '#EXTM3U url-tvg="$base/xmltv.php"\n#EXTINF:-1 tvg-id="news24.example",News\n$base/news.ts';
+      await db.insertSource(
+        SourcesCompanion.insert(
+          name: 'test',
+          sourceType: const Value(SourceType.m3u),
+          serverUrl: '$base/list.m3u',
+          username: '',
+          password: '',
+        ),
+      );
+      final source = (await db.watchActiveSource().first)!;
+      await CatalogSyncService(db).syncAll(source);
+      expect(
+        (await db.select(db.epgProgrammes).get()).single.title,
+        'Last good guide',
+      );
+      final current = (await db.watchActiveSource().first)!;
+      expect(current.epgUrl, isNull);
+      expect(current.discoveredEpgUrl, '$base/xmltv.php');
+      xml = goodGuide.replaceFirst('Last good guide', 'Updated guide');
+      await CatalogSyncService(db).syncAll(current);
+      expect(conditionalRequests['/list.m3u'], '"list"');
+      expect(
+        (await db.select(db.epgProgrammes).get()).single.title,
+        'Updated guide',
+      );
+    },
+  );
 
   test('stream URL builders embed credentials and extension', () {
     final api = XtreamApi(

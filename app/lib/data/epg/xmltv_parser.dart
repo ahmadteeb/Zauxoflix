@@ -20,6 +20,51 @@ class XmltvProgramme {
   final String? description;
 }
 
+/// XMLTV channel headers are ordered before programmes. Only keep the
+/// identifiers and display names needed for matching and manual selection.
+Future<Map<String, List<String>>> readXmltvChannelNames(
+  String filePath,
+) => Isolate.run(() async {
+  final names = <String, List<String>>{};
+  String? id;
+  var readingName = false;
+  final name = StringBuffer();
+  final chunks = File(
+    filePath,
+  ).openRead().transform(const Utf8Decoder(allowMalformed: true));
+  await for (final event in chunks.toXmlEvents().normalizeEvents().flatten()) {
+    switch (event) {
+      case XmlStartElementEvent(name: 'programme'):
+        return names;
+      case XmlStartElementEvent(name: 'channel', attributes: final attributes):
+        id = attributes
+            .where((attr) => attr.name == 'id')
+            .firstOrNull
+            ?.value
+            .trim()
+            .toLowerCase();
+        if (id != null && id.isNotEmpty) names.putIfAbsent(id, () => []);
+      case XmlStartElementEvent(name: 'display-name'):
+        readingName = id != null;
+        name.clear();
+      case XmlTextEvent() when readingName:
+        if (name.length < 300) name.write(event.value);
+      case XmlCDATAEvent() when readingName:
+        if (name.length < 300) name.write(event.value);
+      case XmlEndElementEvent(name: 'display-name'):
+        final value = name.toString().trim();
+        if (readingName && value.isNotEmpty) names[id]?.add(value);
+        readingName = false;
+      case XmlEndElementEvent(name: 'channel'):
+        id = null;
+        readingName = false;
+      default:
+        break;
+    }
+  }
+  return names;
+});
+
 /// XMLTV timestamps: `yyyyMMddHHmmss [±HHMM]`, sometimes truncated and
 /// sometimes without the offset (assume UTC then).
 DateTime? parseXmltvDate(String? raw) {
@@ -100,8 +145,18 @@ Stream<List<XmltvProgramme>> parseXmltv(
     );
   }
 
-  final events = chunks.toXmlEvents().normalizeEvents().flatten();
+  var sawRoot = false;
+  final events = chunks
+      .toXmlEvents(validateNesting: true, validateDocument: true)
+      .normalizeEvents()
+      .flatten();
   await for (final event in events) {
+    if (!sawRoot && event is XmlStartElementEvent) {
+      if (event.name != 'tv') {
+        throw const FormatException('Expected XMLTV document');
+      }
+      sawRoot = true;
+    }
     switch (event) {
       case XmlStartElementEvent(name: 'programme'):
         String? attr(String name) {
@@ -139,6 +194,7 @@ Stream<List<XmltvProgramme>> parseXmltv(
       batch = <XmltvProgramme>[];
     }
   }
+  if (!sawRoot) throw const FormatException('Missing XMLTV document');
   if (batch.isNotEmpty) yield batch;
 }
 
@@ -173,7 +229,13 @@ Future<void> _xmltvWorker(_XmltvJob job) async {
       ),
     );
     await for (final batch in batches) {
-      job.port.send(batch);
+      final ack = ReceivePort();
+      try {
+        job.port.send((batch, ack.sendPort));
+        await ack.first;
+      } finally {
+        ack.close();
+      }
     }
     job.port.send(null); // done
   } catch (e) {
@@ -204,8 +266,9 @@ Stream<List<XmltvProgramme>> parseXmltvFileInIsolate(
   try {
     await for (final message in port) {
       if (message == null) break;
-      if (message is List<XmltvProgramme>) {
-        yield message;
+      if (message case (final List<XmltvProgramme> batch, final SendPort ack)) {
+        yield batch;
+        ack.send(null);
       } else if (message is String) {
         throw Exception('EPG parse failed: $message');
       } else if (message is List) {

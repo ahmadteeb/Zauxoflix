@@ -14,6 +14,8 @@ class MediaItem {
     this.containerExtension,
     this.progress,
     this.badge,
+    this.chartRank,
+    this.continueWatching = false,
   });
 
   final String title;
@@ -30,6 +32,24 @@ class MediaItem {
 
   /// Short overlay chip on the card, e.g. "S2 E2" on Continue Watching.
   final String? badge;
+  final int? chartRank;
+
+  final bool continueWatching;
+
+  String get kindLabel => switch (type) {
+    MediaType.live => 'Live TV',
+    MediaType.movie => 'Movie',
+    MediaType.series => 'Series',
+    null => '',
+  };
+
+  String get actionLabel {
+    if (continueWatching) {
+      if ((progress ?? 0) > 0) return 'Resume';
+      return type == MediaType.series ? 'Play next episode' : 'Play';
+    }
+    return type == MediaType.live ? 'Watch live' : 'View details';
+  }
 
   /// Deterministic placeholder color for items without artwork.
   Color get color => HSLColor.fromAHSL(

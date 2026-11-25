@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/theme/app_theme.dart';
+import '../../core/widgets/app_sheet.dart';
 import '../../data/backend/backend_providers.dart';
 import '../../data/backend/remote_models.dart';
 import '../../data/backend/remote_repository.dart';
@@ -50,85 +51,50 @@ Future<RemoteDevice?> showRemoteDevicePicker(
 }) {
   final selfDeviceId = ref.read(deviceIdentityProvider).deviceId;
   final devices = ref.read(remoteRepositoryProvider).devices();
-  return showModalBottomSheet<RemoteDevice>(
-    context: context,
-    backgroundColor: AppColors.surface,
-    shape: const RoundedRectangleBorder(
-      borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-    ),
-    builder: (context) => SafeArea(
-      child: FutureBuilder(
-        future: devices,
-        builder: (context, snapshot) {
-          final Widget body;
-          if (snapshot.hasError) {
-            body = _Notice(
-              snapshot.error is RemoteException
-                  ? (snapshot.error! as RemoteException).message
-                  : 'Could not load your devices.',
-            );
-          } else if (!snapshot.hasData) {
-            body = const Padding(
-              padding: EdgeInsets.symmetric(vertical: 28),
-              child: Center(
-                child: SizedBox(
-                  width: 26,
-                  height: 26,
-                  child: CircularProgressIndicator(strokeWidth: 2.5),
-                ),
-              ),
-            );
-          } else {
-            final online = [
-              for (final device in snapshot.data!)
-                if (device.online &&
-                    device.isTv &&
-                    device.deviceId != selfDeviceId)
-                  device,
-            ];
-            body = online.isEmpty
-                ? const _Notice(
-                    'No TVs are online. Open Zauxoflix on your TV '
-                    'and sign in to this account.',
-                  )
-                : Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      for (final device in online)
-                        ListTile(
-                          leading: const Icon(
-                            Icons.tv_rounded,
-                            color: AppColors.textPrimary,
-                          ),
-                          title: Text(device.displayName),
-                          trailing: const Icon(
-                            Icons.play_arrow_rounded,
-                            color: AppColors.textSecondary,
-                          ),
-                          onTap: () => Navigator.of(context).pop(device),
-                        ),
-                    ],
-                  );
-          }
-          return ListView(
-            shrinkWrap: true,
-            padding: const EdgeInsets.symmetric(vertical: 12),
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(20, 4, 20, 10),
-                child: Text(
-                  title,
-                  style: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ),
-              body,
-            ],
+  return showAppSheet<RemoteDevice>(
+    context,
+    title: title,
+    icon: Icons.cast_rounded,
+    body: (sheet) => FutureBuilder(
+      future: devices,
+      builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          return _Notice(
+            snapshot.error is RemoteException
+                ? (snapshot.error! as RemoteException).message
+                : 'Could not load your devices.',
           );
-        },
-      ),
+        }
+        if (!snapshot.hasData) {
+          return const Padding(
+            padding: EdgeInsets.symmetric(vertical: 28),
+            child: Center(child: CircularProgressIndicator()),
+          );
+        }
+        final online = [
+          for (final device in snapshot.data!)
+            if (device.online && device.isTv && device.deviceId != selfDeviceId)
+              device,
+        ];
+        if (online.isEmpty) {
+          return const _Notice(
+            'No TVs are online. Open Zauxoflix on your TV '
+            'and sign in to this account.',
+          );
+        }
+        return Column(
+          children: [
+            for (final (i, device) in online.indexed)
+              AppSheetOption(
+                title: device.displayName,
+                icon: Icons.tv_rounded,
+                trailing: Icons.chevron_right_rounded,
+                autofocus: i == 0,
+                onPressed: () => Navigator.of(sheet).pop(device),
+              ),
+          ],
+        );
+      },
     ),
   );
 }

@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../core/theme/app_theme.dart';
+import '../../core/widgets/app_sheet.dart';
 import '../../data/backend/backend_providers.dart';
 import '../../data/backend/remote_models.dart';
 import '../../data/backend/remote_repository.dart';
@@ -36,32 +36,38 @@ class CastTargetController extends Notifier<RemoteDevice?> {
 Future<void> startPlayback(
   BuildContext context,
   WidgetRef ref,
-  PlayerArgs args,
-) async {
+  PlayerArgs args, {
+  bool localOnly = false,
+}) async {
   // The calling widget can unmount during the awaits below (nav rebuilds
   // dispose its element), which makes its `ref` unsafe — grab everything
   // up front.
   final castTarget = ref.read(castTargetProvider.notifier);
-  final repository = ref.read(remoteRepositoryProvider);
   final device = ref.read(castTargetProvider);
   final sourceId = ref.read(activeSourceProvider).value?.id;
   final downloads = ref.read(downloadManagerProvider.notifier);
   final item = args.items[args.initialIndex];
   final identity = item.identity;
-  if (device == null || identity == null) {
-    final localArgs = sourceId == null
+  if (localOnly || device == null || identity == null) {
+    final localArgs = localOnly || sourceId == null
         ? args
-        : await _preferLocalDownloads(downloads, sourceId, args);
+        : await preferLocalDownloads(downloads, sourceId, args);
     if (!context.mounted) return;
-    await context.push('/player', extra: localArgs);
+    if (GoRouterState.of(context).extra == playerDetailsOrigin) {
+      context.pop(localArgs);
+    } else {
+      await context.push('/player', extra: localArgs);
+    }
     return;
   }
   try {
-    await repository.play(
-      targetDeviceId: device.deviceId,
-      identity: identity,
-      positionSec: item.startAt?.inSeconds ?? 0,
-    );
+    await ref
+        .read(remoteRepositoryProvider)
+        .play(
+          targetDeviceId: device.deviceId,
+          identity: identity,
+          positionSec: item.startAt?.inSeconds ?? 0,
+        );
   } on RemoteException catch (error) {
     // A vanished target would swallow every play tap, so drop the session.
     castTarget.set(null);
@@ -79,7 +85,7 @@ Future<void> startPlayback(
 
 /// Swaps each item's stream URL for its completed download, so anything
 /// saved on this device plays offline no matter which screen started it.
-Future<PlayerArgs> _preferLocalDownloads(
+Future<PlayerArgs> preferLocalDownloads(
   DownloadManager downloads,
   int sourceId,
   PlayerArgs args,
@@ -100,6 +106,9 @@ Future<PlayerArgs> _preferLocalDownloads(
       PlayerItem(
         url: local,
         title: item.title,
+        episodeImage: item.episodeImage,
+        seriesCover: item.seriesCover,
+        containerExtension: item.containerExtension,
         subtitle: item.subtitle,
         startAt: item.startAt,
         identity: item.identity,
@@ -155,44 +164,31 @@ Future<void> showCastSheet(BuildContext context, WidgetRef ref) async {
     return;
   }
 
-  await showModalBottomSheet<void>(
-    context: context,
-    backgroundColor: AppColors.surface,
-    shape: const RoundedRectangleBorder(
-      borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-    ),
-    builder: (sheetContext) => SafeArea(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          ListTile(
-            leading: Icon(
-              current.isTv ? Icons.tv_rounded : Icons.cast_connected_rounded,
-            ),
-            title: Text(current.displayName),
-            subtitle: const Text('Casting to this device'),
-          ),
-          ListTile(
-            leading: const Icon(Icons.settings_remote_rounded),
-            title: const Text('Open remote'),
-            onTap: () {
-              Navigator.of(sheetContext).pop();
-              unawaited(
-                router.push('/remote', extra: RemoteControlArgs(current)),
-              );
-            },
-          ),
-          ListTile(
-            leading: const Icon(Icons.cast_rounded),
-            title: const Text('Stop casting'),
-            onTap: () {
-              castTarget.set(null);
-              Navigator.of(sheetContext).pop();
-            },
-          ),
-          const SizedBox(height: 8),
-        ],
-      ),
+  final action = await showAppSheet<bool>(
+    context,
+    title: current.displayName,
+    subtitle: 'Casting to this device',
+    icon: Icons.cast_connected_rounded,
+    body: (sheet) => Column(
+      children: [
+        AppSheetOption(
+          icon: Icons.settings_remote_rounded,
+          title: 'Open remote',
+          autofocus: true,
+          onPressed: () => Navigator.of(sheet).pop(true),
+        ),
+        AppSheetOption(
+          icon: Icons.cast_rounded,
+          title: 'Stop casting',
+          onPressed: () => Navigator.of(sheet).pop(false),
+        ),
+      ],
     ),
   );
+  if (!context.mounted || action == null) return;
+  if (action) {
+    unawaited(router.push('/remote', extra: RemoteControlArgs(current)));
+  } else {
+    castTarget.set(null);
+  }
 }

@@ -1,10 +1,11 @@
+import '../../data/discovery/discovery_repository.dart';
+import '../../data/discovery/title_identity.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/responsive/form_factor.dart';
 import '../../core/theme/app_theme.dart';
-import '../../core/tv/focusable.dart';
-import '../../core/widgets/app_image.dart';
+import '../../core/widgets/catalog_row_card.dart';
 import '../../core/widgets/skeleton.dart';
 import '../../data/backend/remote_models.dart';
 import '../../data/db/app_database.dart';
@@ -12,7 +13,7 @@ import '../../data/providers.dart';
 import '../../data/xtream/xtream_api.dart';
 import '../../data/xtream/xtream_models.dart';
 import '../downloads/download_button.dart';
-import '../player/player_screen.dart';
+import '../player/player_catalog.dart';
 import '../remote/cast_session.dart';
 import '../remote/device_picker.dart';
 import 'details_widgets.dart';
@@ -29,54 +30,28 @@ class SeriesDetailsScreen extends ConsumerStatefulWidget {
 
 class _SeriesDetailsScreenState extends ConsumerState<SeriesDetailsScreen> {
   int? _season;
+  (int, int)? _catalogKey;
   // Memoized so season switches (setState) don't recreate the futures and
   // refetch/flash the whole page.
   Future<SeriesItem?>? _seriesFuture;
-  Future<XtreamSeriesInfo>? _infoFuture;
 
   void _playEpisode(
     XtreamApi api,
     SeriesItem series,
     List<XtreamEpisode> episodes,
     int index, {
-    Duration? startAt,
+    PlaybackPosition? position,
   }) {
-    final resume = ref.read(resumeServiceProvider);
     startPlayback(
       context,
       ref,
-      PlayerArgs(
-        items: [
-          for (final (i, e) in episodes.indexed)
-            PlayerItem(
-              url: api.seriesEpisodeUrl(e.id, e.containerExtension),
-              title: series.name,
-              subtitle: 'S${e.season} E${e.episodeNum} — ${e.title}',
-              startAt: i == index ? startAt : null,
-              identity: PlaybackIdentity(
-                itemType: 'SERIES',
-                itemId: '${series.seriesId}',
-                episodeId: '${e.id}',
-              ),
-            ),
-        ],
-        initialIndex: index,
-        onProgress: (i, position, duration) {
-          final e = episodes[i];
-          resume?.report(
-            kind: WatchKind.episode,
-            itemId: e.id,
-            seriesId: series.seriesId,
-            title: series.name,
-            subtitle: 'S${e.season} E${e.episodeNum} — ${e.title}',
-            // Series poster, not the episode still — the Continue Watching
-            // card represents the whole series.
-            imageUrl: series.cover ?? e.image,
-            containerExtension: e.containerExtension,
-            position: position,
-            duration: duration,
-          );
-        },
+      seasonPlayback(
+        api,
+        series,
+        episodes,
+        index,
+        ref.read(resumeServiceProvider),
+        position: position,
       ),
     );
   }
@@ -87,17 +62,18 @@ class _SeriesDetailsScreenState extends ConsumerState<SeriesDetailsScreen> {
     final api = ref.watch(xtreamApiProvider);
     if (source == null || api == null) return const SizedBox.shrink();
     final db = ref.watch(databaseProvider);
+    final seriesInfo = ref.watch(playerSeriesProvider(widget.seriesId).future);
 
-    _seriesFuture ??= db.getSeriesItem(source.id, widget.seriesId);
-    // Errors leave the metadata/episodes blank instead of surfacing an
-    // unhandled exception: this future may have no listener yet (or ever,
-    // when the series row is missing) while the outer FutureBuilder waits.
-    _infoFuture ??= api
-        .seriesInfo(widget.seriesId)
-        .catchError((Object _) => const XtreamSeriesInfo(seasons: {}));
+    final key = (source.id, widget.seriesId);
+    if (_catalogKey != key) {
+      _catalogKey = key;
+      _seriesFuture = db.getSeriesItem(source.id, widget.seriesId);
+      _season = null;
+    }
 
     return Scaffold(
       body: FutureBuilder(
+        key: ValueKey(key),
         future: _seriesFuture,
         builder: (context, seriesSnapshot) {
           final series = seriesSnapshot.data;
@@ -107,7 +83,8 @@ class _SeriesDetailsScreenState extends ConsumerState<SeriesDetailsScreen> {
                 : const Center(child: Text('Series not found'));
           }
           return FutureBuilder(
-            future: _infoFuture,
+            // Attach the error listener as soon as the episode request starts.
+            future: seriesInfo,
             builder: (context, infoSnapshot) {
               final info = infoSnapshot.data;
               final loading =
@@ -119,14 +96,13 @@ class _SeriesDetailsScreenState extends ConsumerState<SeriesDetailsScreen> {
                 builder: (context, positionsSnapshot) {
                   final positions =
                       positionsSnapshot.data ?? const <PlaybackPosition>[];
-                  final resume = positions.firstOrNull;
-                  final progressByEpisodeId = {
+                  final latest = positions.firstOrNull;
+                  final resume = latest?.isCompletedEpisode == true
+                      ? null
+                      : latest;
+                  final positionsById = {
                     for (final p in positions)
-                      if (p.durationSecs > 0)
-                        p.itemId: (p.positionSecs / p.durationSecs).clamp(
-                          0.0,
-                          1.0,
-                        ),
+                      if (!p.isCompletedEpisode) p.itemId: p,
                   };
                   // Locate the resume episode in the loaded seasons; a stale
                   // position for a removed episode falls back to Play.
@@ -168,13 +144,22 @@ class _SeriesDetailsScreenState extends ConsumerState<SeriesDetailsScreen> {
                       final favorite = favSnapshot.data ?? false;
                       return DetailsScaffold(
                         title: series.name,
+                        discoveryKey: seriesKey(
+                          series,
+                          year: titleYear(info?.releaseDate),
+                          external: info?.externalId,
+                        ),
+                        providerScore: providerRating(
+                          series.rating,
+                          series.ratingScale,
+                        ),
                         posterUrl: series.cover,
                         backdropUrl: series.cover,
                         metaLine: [
-                          if (series.rating != null)
-                            '★ ${series.rating!.toStringAsFixed(1)}',
-                          if (info?.releaseDate case final d?)
-                            d.split('-').first,
+                          if ((titleYear(info?.releaseDate) ??
+                                  series.releaseYear)
+                              case final year?)
+                            '$year',
                           ?info?.genre,
                           if (seasonNumbers.isNotEmpty)
                             '${seasonNumbers.length} season'
@@ -184,21 +169,15 @@ class _SeriesDetailsScreenState extends ConsumerState<SeriesDetailsScreen> {
                         cast: info?.cast,
                         loadingDetails: loading,
                         playLabel: resumeEpisode != null
-                            ? 'Resume S${resumeEpisode.season} '
+                            ? '${resume!.positionSecs > 0 ? 'Resume' : 'Play'} S${resumeEpisode.season} '
                                   'E${resumeEpisode.episodeNum}'
                             : firstEpisode == null
                             ? 'Play'
                             : 'Play S$selectedSeason '
                                   'E${firstEpisode.episodeNum}',
-                        playProgress:
-                            resumeEpisode == null ||
-                                resume == null ||
-                                resume.durationSecs <= 0
+                        playProgress: resumeEpisode == null
                             ? null
-                            : (resume.positionSecs / resume.durationSecs).clamp(
-                                0.0,
-                                1.0,
-                              ),
+                            : _fractionWatched(resume),
                         favorite: favorite,
                         onToggleFavorite: () => favorite
                             ? db.removeFavorite(
@@ -237,32 +216,46 @@ class _SeriesDetailsScreenState extends ConsumerState<SeriesDetailsScreen> {
                                 series,
                                 resumeEpisodes!,
                                 resumeIndex,
-                                startAt: Duration(
-                                  seconds: resume!.positionSecs,
-                                ),
+                                position: resume,
                               )
                             : firstEpisode == null
                             ? null
                             : () => _playEpisode(api, series, episodes, 0),
-                        bottom: infoSnapshot.hasError
-                            ? const Text(
-                                'Could not load episodes — check your '
-                                'connection.',
-                                style: TextStyle(
-                                  color: AppColors.textSecondary,
-                                ),
-                              )
-                            : loading || info == null
+                        episodesBuilder: (showHeading) => loading
                             ? const EpisodesSkeleton()
+                            : infoSnapshot.hasError
+                            ? Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Text(
+                                    'Could not load episodes — check your connection.',
+                                    style: TextStyle(
+                                      color: AppColors.textSecondary,
+                                    ),
+                                  ),
+                                  TextButton(
+                                    onPressed: () => ref.invalidate(
+                                      playerSeriesProvider(widget.seriesId),
+                                    ),
+                                    child: const Text('Retry'),
+                                  ),
+                                ],
+                              )
                             : _EpisodeList(
+                                showHeading: showHeading,
                                 seasonNumbers: seasonNumbers,
                                 selectedSeason: selectedSeason,
                                 episodes: episodes,
-                                progressByEpisodeId: progressByEpisodeId,
+                                positionsById: positionsById,
                                 onSeasonChanged: (s) =>
                                     setState(() => _season = s),
-                                onEpisodeSelected: (i) =>
-                                    _playEpisode(api, series, episodes, i),
+                                onEpisodeSelected: (i) => _playEpisode(
+                                  api,
+                                  series,
+                                  episodes,
+                                  i,
+                                  position: positionsById[episodes[i].id],
+                                ),
                                 downloadButtonFor: kTvBuild
                                     ? null
                                     : (e) => DownloadButton(
@@ -298,12 +291,19 @@ class _SeriesDetailsScreenState extends ConsumerState<SeriesDetailsScreen> {
   }
 }
 
+double? _fractionWatched(PlaybackPosition? position) {
+  if (position == null || position.durationSecs <= 0) return null;
+  return (position.positionSecs / position.durationSecs).clamp(0.0, 1.0);
+}
+
 class _EpisodeList extends StatelessWidget {
+  final bool showHeading;
   const _EpisodeList({
+    required this.showHeading,
     required this.seasonNumbers,
     required this.selectedSeason,
     required this.episodes,
-    required this.progressByEpisodeId,
+    required this.positionsById,
     required this.onSeasonChanged,
     required this.onEpisodeSelected,
     this.downloadButtonFor,
@@ -312,7 +312,7 @@ class _EpisodeList extends StatelessWidget {
   final List<int> seasonNumbers;
   final int? selectedSeason;
   final List<XtreamEpisode> episodes;
-  final Map<int, double> progressByEpisodeId;
+  final Map<int, PlaybackPosition> positionsById;
   final ValueChanged<int> onSeasonChanged;
   final ValueChanged<int> onEpisodeSelected;
   final Widget Function(XtreamEpisode episode)? downloadButtonFor;
@@ -329,16 +329,17 @@ class _EpisodeList extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'EPISODES',
-            style: TextStyle(
-              color: AppColors.textSecondary,
-              fontSize: 12,
-              fontWeight: FontWeight.w700,
-              letterSpacing: 1.2,
+          if (showHeading)
+            const Text(
+              'EPISODES',
+              style: TextStyle(
+                color: AppColors.textSecondary,
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 1.2,
+              ),
             ),
-          ),
-          const SizedBox(height: 10),
+          if (showHeading) const SizedBox(height: 10),
           if (seasonNumbers.length > 1)
             SizedBox(
               height: MediaQuery.textScalerOf(context).scale(16) + 36,
@@ -367,7 +368,7 @@ class _EpisodeList extends StatelessWidget {
           for (final (i, episode) in episodes.indexed)
             _EpisodeTile(
               episode: episode,
-              progress: progressByEpisodeId[episode.id],
+              progress: _fractionWatched(positionsById[episode.id]),
               onSelect: () => onEpisodeSelected(i),
               trailing: downloadButtonFor?.call(episode),
             ),
@@ -392,121 +393,18 @@ class _EpisodeTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 6),
-      child: Focusable(
-        onSelect: onSelect,
-        focusScale: 1.01,
-        borderRadius: const BorderRadius.all(Radius.circular(10)),
-        child: Container(
-          padding: const EdgeInsets.all(8),
-          decoration: BoxDecoration(
-            color: AppColors.surface.withValues(alpha: 0.6),
-            borderRadius: BorderRadius.circular(10),
-          ),
-          child: Row(
-            children: [
-              SizedBox(
-                width: 32,
-                child: Text(
-                  '${episode.episodeNum}',
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.textSecondary,
-                  ),
-                ),
-              ),
-              ClipRRect(
-                borderRadius: BorderRadius.circular(6),
-                child: SizedBox(
-                  width: MediaQuery.sizeOf(context).width < 500 ? 72 : 128,
-                  height: MediaQuery.sizeOf(context).width < 500 ? 48 : 72,
-                  child: Stack(
-                    fit: StackFit.expand,
-                    children: [
-                      episode.image == null
-                          ? const ColoredBox(
-                              color: AppColors.surfaceLight,
-                              child: Icon(
-                                Icons.movie_outlined,
-                                size: 22,
-                                color: AppColors.textSecondary,
-                              ),
-                            )
-                          : AppImage(
-                              url: episode.image!,
-                              memCacheWidth: 256,
-                              placeholderIconSize: 20,
-                            ),
-                      if (progress case final progress?)
-                        Align(
-                          alignment: Alignment.bottomCenter,
-                          child: LinearProgressIndicator(
-                            value: progress,
-                            minHeight: 3,
-                            backgroundColor: Colors.black54,
-                            color: AppColors.primary,
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
-              ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      episode.title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontSize: 14.5,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    if (episode.plot != null) ...[
-                      const SizedBox(height: 3),
-                      Text(
-                        episode.plot!,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: AppColors.textSecondary,
-                          fontSize: 12,
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-              const SizedBox(width: 12),
-              if (episode.durationText != null &&
-                  MediaQuery.sizeOf(context).width >= 600)
-                Text(
-                  episode.durationText!,
-                  style: const TextStyle(
-                    color: AppColors.textSecondary,
-                    fontSize: 12,
-                  ),
-                )
-              else
-                const Icon(
-                  Icons.play_arrow_rounded,
-                  color: AppColors.textSecondary,
-                ),
-              if (trailing case final trailing?) ...[
-                const SizedBox(width: 4),
-                trailing,
-              ],
-              const SizedBox(width: 4),
-            ],
-          ),
-        ),
-      ),
+    return CatalogRowCard(
+      title: episode.title,
+      onSelect: onSelect,
+      caption: [
+        'Episode ${episode.episodeNum}',
+        if (episode.durationText?.isNotEmpty == true) episode.durationText!,
+      ].join(' · '),
+      description: episode.plot,
+      image: episode.image,
+      icon: Icons.movie_outlined,
+      progress: progress,
+      trailing: trailing,
     );
   }
 }

@@ -5,6 +5,7 @@ import '../../core/theme/app_theme.dart';
 import '../../data/db/app_database.dart';
 import '../../data/downloads/download_manager.dart';
 import '../../data/providers.dart';
+import 'download_actions.dart';
 import 'download_progress_details.dart';
 
 /// Action cycling through the download lifecycle:
@@ -45,36 +46,12 @@ class DownloadButton extends ConsumerWidget {
     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
   );
 
-  Future<void> _confirmRemove(
-    BuildContext context,
-    DownloadManager manager,
-    DownloadItem item,
-  ) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Remove download?'),
-        content: Text('"${item.title}" will be deleted from this device.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: AppColors.primary),
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Remove'),
-          ),
-        ],
-      ),
-    );
-    if (confirmed == true) await manager.remove(item);
-  }
-
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final db = ref.watch(databaseProvider);
-    final progress = ref.watch(downloadManagerProvider)[(kind, itemId)];
+    final progress = ref.watch(
+      downloadManagerProvider.select((map) => map[(sourceId, kind, itemId)]),
+    );
     final manager = ref.read(downloadManagerProvider.notifier);
 
     return StreamBuilder(
@@ -82,33 +59,41 @@ class DownloadButton extends ConsumerWidget {
       builder: (context, snapshot) {
         final item = snapshot.data;
         if (progress != null) {
-          final queued = progress.phase == DownloadPhase.queued;
+          final status = switch (progress.phase) {
+            DownloadPhase.queued => 'Queued',
+            DownloadPhase.retrying => 'Waiting to retry',
+            DownloadPhase.downloading => null,
+          };
           final indicator = _DownloadRing(
-            // Queued and unknown-size transfers show a spinner.
-            value: queued || progress.totalBytes <= 0 ? null : progress.value,
+            value: status != null || progress.totalBytes <= 0
+                ? null
+                : progress.value,
           );
-          final tooltip = queued
-              ? 'Queued — tap to cancel'
-              : '${downloadProgressText(progress)}\nTap to cancel';
+          final tooltip =
+              '${status ?? downloadProgressText(progress)}\nTap to cancel';
+          void cancel() => runDownloadAction(
+            context,
+            () => manager.cancel(sourceId, kind, itemId),
+            errorMessage: 'Could not cancel the download. Try again.',
+          );
           if (compact) {
             return IconButton(
               tooltip: tooltip,
-              onPressed: () => manager.cancel(kind, itemId),
+              onPressed: cancel,
               icon: indicator,
             );
           }
           return Tooltip(
             message: tooltip,
             child: OutlinedButton.icon(
-              onPressed: () => manager.cancel(kind, itemId),
+              onPressed: cancel,
               style: _style,
               icon: indicator,
               label: Text(
-                queued
-                    ? 'Queued'
-                    : progress.totalBytes > 0
-                    ? '${(progress.value * 100).floor()}%'
-                    : 'Downloading',
+                status ??
+                    (progress.totalBytes > 0
+                        ? '${(progress.value * 100).floor()}%'
+                        : 'Downloading'),
               ),
             ),
           );
@@ -117,7 +102,7 @@ class DownloadButton extends ConsumerWidget {
           if (compact) {
             return IconButton(
               tooltip: 'Remove download',
-              onPressed: () => _confirmRemove(context, manager, item),
+              onPressed: () => confirmDownloadRemoval(context, manager, item),
               icon: const Icon(
                 Icons.download_done_rounded,
                 color: AppColors.primary,
@@ -127,7 +112,7 @@ class DownloadButton extends ConsumerWidget {
           return Tooltip(
             message: 'Remove download',
             child: OutlinedButton.icon(
-              onPressed: () => _confirmRemove(context, manager, item),
+              onPressed: () => confirmDownloadRemoval(context, manager, item),
               style: _style,
               icon: const Icon(
                 Icons.download_done_rounded,
@@ -138,34 +123,46 @@ class DownloadButton extends ConsumerWidget {
             ),
           );
         }
-        void start() => manager.start(
-          sourceId: sourceId,
-          kind: kind,
-          itemId: itemId,
-          seriesId: seriesId,
-          url: url!,
-          title: title,
-          subtitle: subtitle,
-          imageUrl: imageUrl,
-          episodeImageUrl: episodeImageUrl,
-          containerExtension: containerExtension,
+        void start() => runDownloadAction(
+          context,
+          () => manager.start(
+            sourceId: sourceId,
+            kind: kind,
+            itemId: itemId,
+            seriesId: seriesId,
+            url: url!,
+            title: title,
+            subtitle: subtitle,
+            imageUrl: imageUrl,
+            episodeImageUrl: episodeImageUrl,
+            containerExtension: containerExtension,
+          ),
+          errorMessage: 'Could not start the download. Try again.',
         );
+        final hint = switch (item?.status) {
+          DownloadStatus.failed || DownloadStatus.noSpace => 'Retry download',
+          DownloadStatus.downloading => 'Resume download',
+          _ => 'Download for offline playback',
+        };
         if (compact) {
           return IconButton(
-            tooltip: 'Download for offline playback',
+            tooltip: hint,
             onPressed: url == null ? null : start,
-            icon: const Icon(
-              Icons.download_rounded,
+            icon: Icon(
+              item == null ? Icons.download_rounded : Icons.refresh_rounded,
               color: AppColors.textSecondary,
             ),
           );
         }
         return Tooltip(
-          message: 'Download for offline playback',
+          message: hint,
           child: OutlinedButton(
             onPressed: url == null ? null : start,
             style: _style,
-            child: const Icon(Icons.download_rounded, size: 24),
+            child: Icon(
+              item == null ? Icons.download_rounded : Icons.refresh_rounded,
+              size: 24,
+            ),
           ),
         );
       },

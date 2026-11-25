@@ -280,62 +280,69 @@ class AuthController extends Notifier<AuthState> {
     final generation = _generation;
     try {
       final repository = ref.read(provisionRepositoryProvider);
-      final payload = await repository.fetch();
+      final payload = await repository.fetch().timeout(
+        const Duration(seconds: 20),
+      );
       if (_disposed || generation != _generation || state is! Authenticated) {
         return;
       }
+
+      final db = ref.read(databaseProvider);
+      final existing = await db.watchActiveSource().first;
+      if (_disposed || generation != _generation || state is! Authenticated) {
+        return;
+      }
+
       if (payload == null) {
-        final existing = await ref
-            .read(databaseProvider)
-            .watchActiveSource()
-            .first;
-        if (existing != null) {
-          await ref.read(databaseProvider).deleteSource(existing.id);
-        }
+        if (existing != null) await db.deleteSource(existing.id);
       } else {
-        if (awaitCatalog) {
-          final existing = await ref
-              .read(databaseProvider)
-              .watchActiveSource()
-              .first;
-          if (_disposed ||
-              generation != _generation ||
-              state is! Authenticated) {
-            return;
-          }
-          if (existing == null || !payload.matches(existing)) {
-            // A changed playlist cannot reuse the previous catalog.
-            state = Authenticated(
-              (state as Authenticated).user,
-              sourceRestoring: true,
-            );
-          }
+        final replacing =
+            existing == null || !payload.matchesPlaylist(existing);
+        final needsCatalog = replacing || existing.lastSyncAt == null;
+        if (needsCatalog) {
+          state = Authenticated(
+            (state as Authenticated).user,
+            sourceRestoring: true,
+          );
         }
         final changed = await repository.applyProvisionedSource(payload);
-        if (changed || awaitCatalog) {
-          final source = await ref
-              .read(databaseProvider)
-              .watchActiveSource()
-              .first;
+        if (_disposed || generation != _generation) return;
+        if (changed || needsCatalog || awaitCatalog) {
+          final source = await db.watchActiveSource().first;
+          if (_disposed || generation != _generation) return;
           if (source != null) {
             final synced = await ref
                 .read(syncControllerProvider.notifier)
-                .syncSource(source);
-            if (!synced && awaitCatalog && source.lastSyncAt == null) {
+                .syncSource(source, waitForGuide: false);
+            if (!synced && source.lastSyncAt == null) {
               throw StateError('Initial catalog sync failed');
             }
           }
         }
       }
-      await _reconcile();
+      if (_disposed || generation != _generation || state is! Authenticated) {
+        return;
+      }
+      final current = state as Authenticated;
+      if (current.sourceRestoreFailed || current.sourceRestoring) {
+        state = Authenticated(current.user);
+      }
+      unawaited(_reconcile());
     } catch (_) {
       // Keep offline accounts usable, but do not mistake a failed fetch for no source.
-      if (awaitCatalog && !_disposed && generation == _generation) {
+      if (!_disposed && generation == _generation && state is Authenticated) {
         final cached = await ref
             .read(databaseProvider)
             .watchActiveSource()
             .first;
-        if (cached?.lastSyncAt == null) rethrow;
+        if (_disposed || generation != _generation) return;
+        if (cached?.lastSyncAt == null) {
+          if (awaitCatalog) rethrow;
+          state = Authenticated(
+            (state as Authenticated).user,
+            sourceRestoreFailed: true,
+          );
+        }
       }
     } finally {
       _refreshing = false;

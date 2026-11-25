@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'package:drift/drift.dart' show Value;
+import 'package:zauxoflix/data/xtream/xtream_models.dart';
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zauxoflix/data/db/app_database.dart';
@@ -25,6 +27,196 @@ void main() {
   tearDown(() => db.close());
 
   group('ResumeService', () {
+    test(
+      'caught-up series returns when a later episode or season arrives',
+      () async {
+        const finale = XtreamEpisode(
+          id: 88,
+          title: 'Finale',
+          season: 1,
+          episodeNum: 12,
+        );
+        const next = XtreamEpisode(
+          id: 92,
+          title: 'A new chapter',
+          season: 2,
+          episodeNum: 1,
+        );
+        await resume.completeEpisode(
+          seriesId: 7,
+          episodeId: 88,
+          title: 'Series',
+          finishedSubtitle: 'S1 E12 — Finale',
+          finishedDuration: 2000,
+          imageUrl: 'https://example.test/poster',
+        );
+        expect(await db.watchContinueWatching(sourceId).first, isEmpty);
+        final checks = <int, DateTime>{};
+        var requests = 0;
+        final reopened = ResumeService(db, sourceId);
+        await reopened.refreshCaughtUp(
+          (_) async {
+            requests++;
+            return const XtreamSeriesInfo(
+              seasons: {
+                1: [finale],
+              },
+            );
+          },
+          checks,
+          active: () => true,
+        );
+        expect(await db.watchContinueWatching(sourceId).first, isEmpty);
+        Future<XtreamSeriesInfo> updated(int _) async {
+          requests++;
+          return const XtreamSeriesInfo(
+            seasons: {
+              2: [next],
+              1: [finale],
+            },
+          );
+        }
+
+        await reopened.refreshCaughtUp(updated, checks, active: () => true);
+        expect(requests, 1);
+        checks[7] = DateTime.now().subtract(const Duration(hours: 7));
+        await reopened.refreshCaughtUp(updated, checks, active: () => true);
+        final row = (await db.watchContinueWatching(sourceId).first).single;
+        expect(
+          (row.itemId, row.positionSecs, row.subtitle),
+          (92, 0, 'S2 E1 — A new chapter'),
+        );
+        expect(row.imageUrl, 'https://example.test/poster');
+        await reopened.report(
+          kind: WatchKind.episode,
+          itemId: 92,
+          seriesId: 7,
+          title: 'Series',
+          position: const Duration(seconds: 4),
+          duration: const Duration(minutes: 40),
+        );
+        expect(
+          (await db.watchContinueWatching(sourceId).first).single.itemId,
+          92,
+        );
+        expect(await db.caughtUpEpisodes(sourceId), isEmpty);
+      },
+    );
+
+    test(
+      'new same-season episodes return after a catalog outage and ID change',
+      () async {
+        await resume.completeEpisode(
+          seriesId: 7,
+          episodeId: 111,
+          title: 'Show',
+          finishedSubtitle: 'S1 E7 — Seven',
+          finishedDuration: 1800,
+        );
+        final checks = <int, DateTime>{};
+        await resume.refreshCaughtUp(
+          (_) async => throw StateError('offline'),
+          checks,
+          active: () => true,
+        );
+        expect(await db.watchContinueWatching(sourceId).first, isEmpty);
+        checks[7] = DateTime.now().subtract(const Duration(hours: 7));
+        await resume.refreshCaughtUp(
+          (_) async => const XtreamSeriesInfo(
+            seasons: {
+              1: [
+                XtreamEpisode(
+                  id: 301,
+                  title: 'Seven',
+                  season: 1,
+                  episodeNum: 7,
+                ),
+                XtreamEpisode(
+                  id: 302,
+                  title: 'Eight',
+                  season: 1,
+                  episodeNum: 8,
+                ),
+                XtreamEpisode(id: 303, title: 'Nine', season: 1, episodeNum: 9),
+              ],
+            },
+          ),
+          checks,
+          active: () => true,
+        );
+        final next = (await db.watchContinueWatching(sourceId).first).single;
+        expect(
+          (next.itemId, next.subtitle, next.positionSecs),
+          (302, 'S1 E8 — Eight', 0),
+        );
+      },
+    );
+
+    test(
+      'manual removal while checking for a new episode stays removed',
+      () async {
+        await resume.completeEpisode(
+          seriesId: 7,
+          episodeId: 88,
+          title: 'Series',
+          finishedSubtitle: 'S1 E1 — Pilot',
+          finishedDuration: 1200,
+        );
+        final started = Completer<void>(),
+            response = Completer<XtreamSeriesInfo>();
+        final checking = resume.refreshCaughtUp(
+          (_) {
+            started.complete();
+            return response.future;
+          },
+          {},
+          active: () => true,
+        );
+        await started.future;
+        await db.deletePositionsForSeries(sourceId, 7);
+        response.complete(
+          const XtreamSeriesInfo(
+            seasons: {
+              1: [
+                XtreamEpisode(id: 93, title: 'New', season: 1, episodeNum: 2),
+              ],
+            },
+          ),
+        );
+        await checking;
+        expect(await db.watchContinueWatching(sourceId).first, isEmpty);
+      },
+    );
+
+    test(
+      'finishing an episode preserves an existing resume point for its successor',
+      () async {
+        await resume.report(
+          kind: WatchKind.episode,
+          itemId: 13,
+          seriesId: 7,
+          title: 'Series',
+          subtitle: 'S2 E1 — Premiere',
+          position: const Duration(minutes: 5),
+          duration: const Duration(minutes: 30),
+        );
+        await resume.completeEpisode(
+          seriesId: 7,
+          episodeId: 12,
+          title: 'Series',
+          nextId: 13,
+          subtitle: 'S2 E1 — Premiere',
+          finishedSubtitle: 'S1 E12 — Finale',
+          finishedDuration: 1800,
+        );
+        final row = (await db.watchContinueWatching(sourceId).first).single;
+        expect(
+          (row.itemId, row.positionSecs, row.durationSecs),
+          (13, 300, 1800),
+        );
+      },
+    );
+
     test('saves a mid-playback position', () async {
       await resume.report(
         kind: WatchKind.movie,

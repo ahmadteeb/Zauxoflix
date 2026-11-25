@@ -1,8 +1,41 @@
 #include "flutter_window.h"
 
+#include <flutter/method_channel.h>
+#include <flutter/standard_method_codec.h>
 #include <optional>
 
 #include "flutter/generated_plugin_registrant.h"
+
+namespace {
+void RegisterDownloadStorage(flutter::FlutterEngine* engine) {
+  flutter::MethodChannel<flutter::EncodableValue> channel(
+      engine->messenger(), "zauxoflix/download_storage",
+      &flutter::StandardMethodCodec::GetInstance());
+  channel.SetMethodCallHandler([](const auto& call, auto result) {
+    if (call.method_name() != "freeBytes") {
+      result->NotImplemented();
+      return;
+    }
+    const auto* path = std::get_if<std::string>(call.arguments());
+    int length = path == nullptr
+                     ? 0
+                     : MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS,
+                                           path->c_str(), -1, nullptr, 0);
+    ULARGE_INTEGER available = {};
+    if (length > 0) {
+      std::wstring wide_path(length, L'\0');
+      if (MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, path->c_str(), -1,
+                              wide_path.data(), length) > 0 &&
+          GetDiskFreeSpaceExW(wide_path.c_str(), &available, nullptr, nullptr)) {
+        result->Success(flutter::EncodableValue(
+            static_cast<int64_t>(available.QuadPart)));
+        return;
+      }
+    }
+    result->Success();
+  });
+}
+}  // namespace
 
 FlutterWindow::FlutterWindow(const flutter::DartProject& project)
     : project_(project) {}
@@ -25,6 +58,7 @@ bool FlutterWindow::OnCreate() {
     return false;
   }
   RegisterPlugins(flutter_controller_->engine());
+  RegisterDownloadStorage(flutter_controller_->engine());
   SetChildContent(flutter_controller_->view()->GetNativeWindow());
 
   flutter_controller_->engine()->SetNextFrameCallback([&]() {

@@ -41,6 +41,31 @@
 
 ---
 
+## What's new in 1.1.0
+
+- Home offers separate movie and series recommendations based on your library activity. The featured picks rotate, and the Top 10 charts show matching titles from your playlist.
+- Global Search remembers recent searches and recently opened movies, series, and channels on this device. Clear the search field to see both lists. Use **Clear** beside a list to remove its entries.
+- Live TV groups stream variants under one channel and brings regional channels and football broadcasters into dedicated collections.
+- The player adds episode controls and seek previews on supported streams and devices. Downloads show storage checks and progress, with Wi-Fi-only and background transfers on Android and iOS.
+
+See the [changelog](CHANGELOG.md) for the full release notes.
+
+## Ratings, trailers, and discovery
+
+Zauxoflix can use Trakt's public metadata for a movie or series. Details shows a sourced score, an IMDb title link when available, official YouTube trailers, and related titles found in your playlist. Saving a title to My List can add recommendations to Home. Zauxoflix uses Trakt but is not endorsed or certified by Trakt.
+
+For a live build, register a [Trakt Development app](https://developer.trakt.tv/docs/create-an-app) and add `--dart-define=TRAKT_CLIENT_ID=YOUR_PUBLIC_CLIENT_ID` alongside the existing Supabase flags. Release workflows read the public client ID from the GitHub Actions repository variable `TRAKT_CLIENT_ID`. Request read-only Production access from Trakt before distributing a live integration. Zauxoflix sends title queries or IDs to Trakt and loads YouTube when you open a trailer.
+
+### IMDb title and cast details for personal use
+
+With a personal IMDb index installed, open a matched movie or series and scroll to **IMDb details**. Select a cast member to see their character, available birth and death years, professions, known-for titles, and IMDb profile. The app uses the exact IMDb title ID supplied by the playlist or Trakt when available. It can also identify a title offline by its name, release year and movie or series type when exactly one record matches. The synopsis comes from the playlist provider.
+
+To build or refresh the index, run `python tool/import_imdb.py --output "/path/to/Zauxoflix/imdb.sqlite"` from `app`. Choose the app’s local application-support directory. On Windows it is normally `%APPDATA%\com.zauxoflix\zauxoflix`. On Linux it is normally `$XDG_DATA_HOME/com.zauxoflix.zauxoflix`, with `$XDG_DATA_HOME` defaulting to `~/.local/share`. The importer downloads four official compressed files. Pass `--datasets DIRECTORY` to reuse downloaded files. Reopen a title after the import finishes. [IMDb datasets](https://developer.imdb.com/non-commercial-datasets/) · [IMDb usage terms](https://help.imdb.com/article/imdb/general-information/can-i-use-imdb-data-in-my-software/G5JTRESSHJBBHTGX)
+
+For a private Android or LG TV build, run `python tool/prepare_device_imdb.py --index /path/to/imdb.sqlite --library /path/to/zauxoflix.sqlite --output-dir assets/private_imdb` from `app` in the personal build checkout. This reads the library to select IMDb titles, ratings and cast. Only those IMDb records enter the generated asset. Build and install the app normally. The first lookup unpacks the index into app storage for offline use. Repeat the preparation and build after refreshing the IMDb data or changing the library. Keep generated assets and packages containing them for individual personal use. Public builds use a clean checkout with only `assets/private_imdb/README.txt` in that directory.
+
+To try the isolated sample library on Windows, download the **Zauxoflix-Discovery-Preview-Windows** artifact from the **Windows discovery preview** workflow, extract the whole folder, and run `zauxoflix.exe`. You can also run `flutter run -d windows -t tool/discovery_preview.dart` from `app` with the Windows Flutter toolchain and NuGet installed. The preview uses an in-memory playlist and illustrative ratings. Open **Series → Severance**, play the trailer, switch between Episodes and More like this, then save the show and return Home. **The Office** is an ambiguous match. **Midnight Signal** demonstrates an unavailable trailer. Catalog playback uses the included sample clip. Trailer playback requires internet.
+
 ## ✨ Key Highlights
 
 - ⚡ **100% Direct-to-Provider Streaming (Zero Video Proxying)**: Media streams connect directly between your device and your IPTV provider. Supabase never proxies video traffic or hosts your catalog.
@@ -263,24 +288,19 @@ flowchart TD
 1. Create a Supabase project at [supabase.com](https://supabase.com).
 2. Enable email/password signups in **Authentication → Providers → Email**.
 3. In **Authentication → Email Templates → Reset Password**, include `{{ .Token }}` in the template to enable in-app password recovery.
-4. Install the Supabase CLI, then apply migrations and deploy the TV pairing Edge Function:
+4. Install the Supabase CLI and sign in. From the repository root, preview the pending migrations for your fork's Supabase project.
 
 ```bash
-# 1. Login to Supabase
 supabase login
-
-# 2. Link your local repo to your remote project
-supabase link --project-ref YOUR_PROJECT_REF
-
-# 3. Push schema migrations
-supabase db push --remote
-
-# 4. Deploy the TV pairing Edge Function
-supabase functions deploy tv-pairing --remote
+python supabase/scripts/update_database.py YOUR_PROJECT_REF
 ```
+
+For a new project, rerun the script with `--apply --deploy-pairing` after reviewing the plan. Existing projects that have applied the four repository migrations can move to 1.1.0 without a Supabase schema update. The app upgrades its SQLite library on first launch. See the [database upgrade guide](supabase/README.md#deployment-and-checks).
 
 > [!IMPORTANT]
 > Never embed a `service_role` key in Flutter. Flutter only receives the project URL and the publishable (`anon`) key. See [Supabase architecture details](supabase/README.md).
+
+In your GitHub fork, set `SUPABASE_URL` and `SUPABASE_ANON_KEY` as Actions secrets. Set the optional `TRAKT_CLIENT_ID` as an Actions variable. For local builds you can pass the Supabase values via `--dart-define-from-file=supabase.local.json` from `app`. Local config files and generated personal IMDb assets are ignored by Git.
 
 ---
 
@@ -384,6 +404,8 @@ For your own development build on a Mac, open `app/ios/Runner.xcworkspace` in Xc
 
 ### 📺 Samsung Smart TV (Tizen OS)
 
+#### Native Flutter package for Tizen 6.0+
+
 The **`Zauxoflix-<version>-tizen.tpk`** file in GitHub Releases is **unsigned**. Each user must sign it with a Samsung certificate profile that includes their TV's DUID before installing it. CI does not require or use Tizen certificate secrets. This is developer sideloading; installation through the Samsung TV Apps store is a separate distribution process.
 
 #### Step 1: Install the signing tools
@@ -443,7 +465,7 @@ Open **Zauxoflix** from the TV's Apps screen after installation. For certificate
 ---
 
 ### 📺 LG Smart TV (webOS)
-Install the **`Zauxoflix-<version>-webos.ipk`** package on LG Smart TVs running webOS.
+Install the **`Zauxoflix-<version>-webos.ipk`** package on compatible LG TVs running **webOS 26 Re:New or later**. The native Flutter runtime and LG plugins are required. [LG Flutter for webOS compatibility](https://github.com/lg-flutter-webos/flutter-webos/blob/main/doc/getting-started.md).
 
 #### Step 1: Enable Developer Mode on LG TV
 1. Install the official **Developer Mode** app from the LG Content Store on your TV.
@@ -454,7 +476,8 @@ Install the **`Zauxoflix-<version>-webos.ipk`** package on LG Smart TVs running 
 #### Step 2: Install via webOS CLI (`ares-cli`)
 1. Install the official webOS CLI on your computer:
    ```bash
-   npm install -g @webosose/ares-cli
+   npm install -g @webos-tools/cli
+   ares-config --profile tv
    ```
 2. Register your TV device:
    ```bash
@@ -470,6 +493,18 @@ Install the **`Zauxoflix-<version>-webos.ipk`** package on LG Smart TVs running 
    ```bash
    ares-install --device my-tv Zauxoflix-<version>-webos.ipk
    ```
+
+After updating, open the app, pair it with your account, and relaunch it to check that the session persists. Use the TV remote to test Back, channel preview, fullscreen playback, and volume.
+
+To build the package locally, set up the [LG Flutter SDK and NDK](https://github.com/lg-flutter-webos/flutter-webos/blob/main/doc/getting-started.md) on Linux, then run the same build script used by CI from the repository root:
+
+```bash
+bash app/tool/webos/build.sh --build-name=1.0.0 --build-number=1 \
+  "--dart-define=SUPABASE_URL=$SUPABASE_URL" \
+  "--dart-define=SUPABASE_ANON_KEY=$SUPABASE_ANON_KEY"
+```
+
+Set those variables to your project's URL and client publishable key before building. The package is generated under `app/build/webos/`.
 
 ---
 
