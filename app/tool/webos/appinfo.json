@@ -1,0 +1,20 @@
+{
+  "id": "com.flutter.app.zauxoflix",
+  "version": "0.1.0",
+  "vendor": "Zauxoflix",
+  "type": "native",
+  "main": "zauxoflix",
+  "title": "Zauxoflix",
+  "icon": "icon.png",
+  "largeIcon": "icon.png",
+  "handlesRelaunch": true,
+  "visible": true,
+  "defaultWindowType": "card",
+  "trustLevel": "default",
+  "locationHint": "none",
+  "noSplashOnLaunch": true,
+  "spinnerOnLaunch": false,
+  "transparent": true,
+  "uiRevision": 2,
+  "requiredACG": ["securitykey.operation", "application.launcher"]
+}

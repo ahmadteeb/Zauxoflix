@@ -274,8 +274,9 @@ class _IptvInfoDialog extends ConsumerWidget {
                     ),
                     _InfoRow('Provider', sourceOrigin(source.serverUrl)),
                     if (xtream) _InfoRow('Username', source.username),
-                    if (source.epgUrl?.isNotEmpty ?? false)
-                      _InfoRow('EPG provider', sourceOrigin(source.epgUrl!)),
+                    if ((source.epgUrl ?? source.discoveredEpgUrl)
+                        case final guide? when guide.isNotEmpty)
+                      _InfoRow('EPG provider', sourceOrigin(guide)),
                     _InfoRow(
                       'Last catalog sync',
                       source.lastSyncAt == null

@@ -1,6 +1,7 @@
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
@@ -30,11 +31,85 @@ import 'package:zauxoflix/features/search/search_screen.dart';
 import 'package:zauxoflix/features/settings/settings_screen.dart';
 import 'package:zauxoflix/features/shell/top_nav_bar.dart';
 import 'package:zauxoflix/features/shell/destinations.dart';
+import 'package:zauxoflix/features/shell/mobile_nav_bar.dart';
 import 'package:zauxoflix/features/source_setup/source_setup_screen.dart';
 import 'package:zauxoflix/main.dart';
 import 'support/auth_test_overrides.dart';
 
 void main() {
+  testWidgets('phone hero actions align and keep large labels readable', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.view.resetPhysicalSize);
+    final taps = <String>[];
+    for (final (width, scale) in [(384.0, 1.0), (320.0, 1.0), (375.0, 2.0)]) {
+      tester.view.physicalSize = Size(width, 900);
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.dark,
+          home: MediaQuery(
+            data: MediaQueryData(
+              size: Size(width, 900),
+              textScaler: TextScaler.linear(scale),
+            ),
+            child: Scaffold(
+              body: SingleChildScrollView(
+                child: HeroBanner(
+                  item: const MediaItem(title: 'Last Meal', subtitle: ''),
+                  formFactor: FormFactor.mobile,
+                  playLabel: 'Resume',
+                  onPlay: () => taps.add('Resume'),
+                  onDetails: () => taps.add('Details'),
+                  onToggleMyList: () => taps.add('My List'),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      final targets = ['Resume', 'Details', 'My List']
+          .map(
+            (label) => find
+                .ancestor(
+                  of: find.text(label),
+                  matching: find.byType(GestureDetector),
+                )
+                .first,
+          )
+          .toList();
+      final bounds = targets.map(tester.getRect).toList();
+      if (scale == 1) expect(bounds[0].top, bounds[2].top);
+      expect(bounds[0].height, greaterThanOrEqualTo(48));
+      for (var i = 1; i < bounds.length; i++) {
+        expect(bounds[i].width, closeTo(bounds.first.width, 1));
+        expect(bounds[i].height, bounds.first.height);
+        if (scale == 1) {
+          expect(bounds[i].left - bounds[i - 1].right, greaterThanOrEqualTo(6));
+        } else {
+          expect(bounds[i].left, bounds.first.left);
+          expect(bounds[i].top - bounds[i - 1].bottom, greaterThanOrEqualTo(6));
+        }
+      }
+      if (scale > 1) {
+        final label = tester.renderObject<RenderParagraph>(find.text('Resume'));
+        expect(
+          label.getBoxesForSelection(
+            const TextSelection(baseOffset: 0, extentOffset: 6),
+          ),
+          hasLength(1),
+        );
+      }
+      for (final target in targets) {
+        await tester.tap(target);
+      }
+      expect(taps, ['Resume', 'Details', 'My List']);
+      taps.clear();
+      expect(tester.takeException(), isNull);
+    }
+  });
+
   const cases = [
     (Size(360, 640), 1.3, FormFactor.mobile),
     (Size(600, 960), 1.2, FormFactor.mobile),
@@ -72,6 +147,61 @@ void main() {
                 'A very long movie title that needs to fit on a small phone screen',
           ),
         ]);
+        final now = DateTime.now();
+        await db.replaceSeries(1, [
+          SeriesItemsCompanion.insert(
+            sourceId: 1,
+            seriesId: 9,
+            name: 'القضاء · Family Secrets',
+          ),
+        ]);
+        await db.replaceLiveChannels(1, [
+          LiveChannelsCompanion.insert(
+            sourceId: 1,
+            streamId: 3,
+            name: 'قناة الأخبار · News',
+            epgChannelId: const Value('guide-news'),
+            channelNumber: const Value(3),
+          ),
+        ]);
+        await db
+            .into(db.epgProgrammes)
+            .insert(
+              EpgProgrammesCompanion.insert(
+                sourceId: 1,
+                channelId: 'guide-news',
+                startAt: now.subtract(const Duration(minutes: 20)),
+                endAt: now.add(const Duration(hours: 1)),
+                title: 'Evening news',
+                description: const Value('The latest reports.'),
+              ),
+            );
+        await db.upsertDownload(
+          DownloadsCompanion.insert(
+            sourceId: 1,
+            kind: WatchKind.episode,
+            itemId: 13,
+            seriesId: const Value(9),
+            title: 'القضاء · Family Secrets',
+            subtitle: const Value('S1 E4 — Circle Narrowing'),
+            filePath: 'fixture.mkv',
+            status: DownloadStatus.done,
+            createdAt: now,
+          ),
+        );
+        await db.savePosition(
+          PlaybackPositionsCompanion.insert(
+            sourceId: 1,
+            kind: WatchKind.episode,
+            itemId: 13,
+            seriesId: const Value(9),
+            title: 'القضاء · Family Secrets',
+            subtitle: const Value('S1 E4 — Circle Narrowing'),
+            positionSecs: 0,
+            durationSecs: 0,
+            updatedAt: now,
+          ),
+        );
         final container = ProviderContainer(
           overrides: [
             authenticatedOverride,
@@ -124,7 +254,9 @@ void main() {
                     'A description of this movie to check large text readability.',
               ),
               formFactor: form,
+              playLabel: 'Resume',
               onPlay: () {},
+              onDetails: () {},
               onToggleMyList: () {},
             ),
           ),
@@ -221,6 +353,9 @@ void main() {
     var selected = -1;
     await tester.pumpWidget(
       ProviderScope(
+        overrides: [
+          activeSourceProvider.overrideWith((ref) => Stream.value(null)),
+        ],
         child: MaterialApp(
           theme: AppTheme.dark,
           home: Scaffold(
@@ -241,7 +376,7 @@ void main() {
     expect(selected, 0);
     await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
     await tester.pump();
-    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.sendKeyEvent(LogicalKeyboardKey.select);
     expect(selected, 1);
     await tester.pumpWidget(const SizedBox.shrink());
     for (final node in nodes) {
@@ -288,25 +423,80 @@ void main() {
       for (var i = 0; i < 8; i++) {
         await tester.pump(const Duration(milliseconds: 100));
       }
+      final dock = find.byType(MobileNavBar);
+      final dockHighlight = find.descendant(
+        of: dock,
+        matching: find.byWidgetPredicate(
+          (widget) =>
+              widget is DecoratedBox &&
+              widget.decoration is BoxDecoration &&
+              (widget.decoration as BoxDecoration).gradient ==
+                  AppColors.selectionGradient,
+        ),
+      );
+      expect(dockHighlight, findsOneWidget);
+      final homeList = find
+          .descendant(
+            of: find.byType(HomeScreen),
+            matching: find.byType(ListView),
+          )
+          .first;
+      expect(
+        tester.getBottomLeft(homeList).dy,
+        greaterThan(tester.getTopLeft(dock).dy),
+      );
+      expect(
+        (tester.widget<ListView>(homeList).padding! as EdgeInsets).bottom,
+        greaterThan(tester.getSize(dock).height),
+      );
+      final enabledBlur = find.byWidgetPredicate(
+        (widget) => widget is BackdropFilter && widget.enabled,
+      );
+      expect(enabledBlur, findsOneWidget);
       await tester.tap(find.byTooltip('Search'));
       await tester.pumpAndSettle();
       expect(find.byType(SearchScreen), findsOneWidget);
+      expect(enabledBlur, findsNothing);
       await tester.tap(find.byTooltip('Downloads'));
       await tester.pumpAndSettle();
       expect(find.byType(DownloadsScreen), findsOneWidget);
-      expect(find.byType(NavigationBar), findsOneWidget);
+      expect(dock, findsOneWidget);
+      expect(tester.widget<MobileNavBar>(dock).selectedIndex, 5);
       expect(find.text('More'), findsNothing);
-      await tester.tap(find.text('Settings'));
+      for (final label in ['Home', 'Live TV', 'Movies', 'Series', 'Settings']) {
+        final destination = find.descendant(
+          of: dock,
+          matching: find.text(label),
+        );
+        expect(destination, findsOneWidget);
+        final button = find.ancestor(
+          of: destination,
+          matching: find.byType(TextButton),
+        );
+        expect(tester.getSize(button).width, greaterThanOrEqualTo(48));
+        expect(tester.getSize(button).height, greaterThanOrEqualTo(48));
+      }
+      await tester.tap(
+        find.descendant(of: dock, matching: find.text('Movies')),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byType(BrowseScreen), findsOneWidget);
+      expect(dockHighlight, findsOneWidget);
+      await tester.tap(
+        find.descendant(of: dock, matching: find.text('Settings')),
+      );
       await tester.pumpAndSettle();
       expect(find.byType(SettingsScreen), findsOneWidget);
       expect(
-        tester.widget<NavigationBar>(find.byType(NavigationBar)).selectedIndex,
-        4,
+        tester.widget<MobileNavBar>(dock).selectedIndex,
+        appDestinations.indexWhere((d) => d.path == '/settings'),
       );
-      expect(find.byType(NavigationDestination), findsNWidgets(5));
       expect(tester.takeException(), isNull);
-      final change = find.widgetWithText(OutlinedButton, 'Change');
-      tester.widget<OutlinedButton>(change).onPressed!();
+      await tester.tap(find.widgetWithText(TextButton, 'Playlist'));
+      await tester.pumpAndSettle();
+      final change = find.text('Change playlist');
+      await tester.ensureVisible(change);
+      await tester.tap(change);
       await tester.pumpAndSettle();
       expect(find.byType(SourceSetupScreen), findsOneWidget);
       final cancel = find.text('Cancel');
@@ -315,24 +505,21 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.byType(SettingsScreen), findsOneWidget);
       expect(find.byType(SourceSetupScreen), findsNothing);
-      for (final size in [
-        const Size(320, 640),
-        const Size(844, 390),
-        const Size(1024, 600),
-        const Size(1440, 900),
-        const Size(600, 960),
+      for (final (size, phone) in [
+        (const Size(320, 640), true),
+        (const Size(844, 390), true),
+        (const Size(1024, 600), false),
+        (const Size(1440, 900), false),
+        (const Size(600, 960), true),
       ]) {
         tester.view.physicalSize = size;
         await tester.pumpAndSettle();
         expect(find.byType(SettingsScreen), findsOneWidget);
         expect(
-          find.byType(NavigationBar),
-          size.width < 700 ? findsOneWidget : findsNothing,
+          find.byType(MobileNavBar),
+          phone ? findsOneWidget : findsNothing,
         );
-        expect(
-          find.byType(TopNavBar),
-          size.width >= 700 ? findsOneWidget : findsNothing,
-        );
+        expect(find.byType(TopNavBar), phone ? findsNothing : findsOneWidget);
         expect(tester.takeException(), isNull, reason: 'Shell resize to $size');
       }
 

@@ -10,24 +10,28 @@ final bool isTizenPlatform = detectTizenRuntime(
 );
 
 /// webOS exposes Luna Service APIs even when Dart reports Linux.
-final bool isWebOsPlatform = detectWebOsRuntime(
-  operatingSystem: Platform.operatingSystem,
-  hasLunaApi: () {
-    if (DynamicLibrary.process().providesSymbol('LSRegister')) return true;
-    for (final name in [
-      'libluna-service2.so.3',
-      'libluna-service2.so.2',
-      'libluna-service2.so',
-    ]) {
-      try {
-        if (DynamicLibrary.open(name).providesSymbol('LSRegister')) return true;
-      } on ArgumentError {
-        // Library names vary across webOS SDK versions.
-      }
-    }
-    return false;
-  },
-);
+final bool isWebOsPlatform =
+    const bool.fromEnvironment('ZAUXOFLIX_WEBOS') ||
+    detectWebOsRuntime(
+      operatingSystem: Platform.operatingSystem,
+      hasLunaApi: () {
+        if (DynamicLibrary.process().providesSymbol('LSRegister')) return true;
+        for (final name in [
+          'libluna-service2.so.3',
+          'libluna-service2.so.2',
+          'libluna-service2.so',
+        ]) {
+          try {
+            if (DynamicLibrary.open(name).providesSymbol('LSRegister')) {
+              return true;
+            }
+          } on ArgumentError {
+            // Library names vary across webOS SDK versions.
+          }
+        }
+        return false;
+      },
+    );
 
 bool detectTizenRuntime({
   required String operatingSystem,

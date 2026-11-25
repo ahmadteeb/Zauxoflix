@@ -23,6 +23,43 @@ abstract final class AppColors {
   static const focusRing = AppPalette.white;
   static const outline = AppPalette.outline;
   static const error = AppPalette.red300;
+
+  // Selection colors come from the phone dock. Focus keeps its white ring.
+  static const selectionAccent = AppPalette.red300;
+  static const selectionSurface = Color(0xFF4E121B);
+  static const selectionGradient = LinearGradient(
+    begin: Alignment.topCenter,
+    end: Alignment.bottomCenter,
+    colors: [selectionSurface, Color(0xFF2B151C)],
+  );
+  static const controlSurface = Color(0x6631313A);
+  static const panelGradient = LinearGradient(
+    begin: AlignmentDirectional.topStart,
+    end: AlignmentDirectional.bottomEnd,
+    colors: [Color(0xDC25252E), Color(0xE8121218)],
+  );
+}
+
+extension SelectionButtonStyle on ButtonStyle {
+  ButtonStyle withSelectionGradient(bool selected) {
+    if (!selected) return this;
+    return copyWith(
+      backgroundBuilder: (context, states, child) {
+        if (states.contains(WidgetState.disabled)) {
+          return child ?? const SizedBox.shrink();
+        }
+        final outline =
+            shape?.resolve(states) ?? const RoundedRectangleBorder();
+        return Ink(
+          decoration: ShapeDecoration(
+            gradient: AppColors.selectionGradient,
+            shape: outline.copyWith(side: side?.resolve(states)),
+          ),
+          child: child,
+        );
+      },
+    );
+  }
 }
 
 abstract final class AppSpacing {
@@ -42,6 +79,8 @@ abstract final class AppLayout {
 abstract final class AppTheme {
   static ThemeData get dark {
     final base = ThemeData(
+      fontFamily: 'DM Sans',
+      fontFamilyFallback: const ['IBM Plex Sans Arabic'],
       useMaterial3: true,
       brightness: Brightness.dark,
       // Transparent so the app-wide AppBackground artwork shows through.
@@ -140,31 +179,25 @@ abstract final class AppTheme {
           overlayColor: focusOverlay,
         ),
       ),
-      // Matches the top nav bar's language: app background behind the items,
-      // a neutral surface pill on the selected one.
-      navigationBarTheme: NavigationBarThemeData(
-        backgroundColor: AppColors.background,
-        surfaceTintColor: Colors.transparent,
-        indicatorColor: AppColors.surfaceLight,
-        iconTheme: WidgetStateProperty.resolveWith(
-          (states) => IconThemeData(
-            color: states.contains(WidgetState.selected)
-                ? AppColors.textPrimary
-                : AppColors.textSecondary,
-          ),
+      switchTheme: SwitchThemeData(
+        thumbColor: WidgetStateProperty.resolveWith(
+          (states) =>
+              states.contains(WidgetState.selected) &&
+                  !states.contains(WidgetState.disabled)
+              ? AppColors.selectionAccent
+              : null,
         ),
-        labelTextStyle: WidgetStateProperty.resolveWith(
-          (states) => TextStyle(
-            fontSize: 12,
-            color: states.contains(WidgetState.selected)
-                ? AppColors.textPrimary
-                : AppColors.textSecondary,
-          ),
+        trackColor: WidgetStateProperty.resolveWith(
+          (states) =>
+              states.contains(WidgetState.selected) &&
+                  !states.contains(WidgetState.disabled)
+              ? AppColors.selectionSurface
+              : null,
         ),
       ),
       navigationRailTheme: const NavigationRailThemeData(
         backgroundColor: AppColors.surface,
-        selectedIconTheme: IconThemeData(color: AppColors.primary),
+        selectedIconTheme: IconThemeData(color: AppColors.selectionAccent),
         unselectedIconTheme: IconThemeData(color: AppColors.textSecondary),
         selectedLabelTextStyle: TextStyle(color: AppColors.textPrimary),
         unselectedLabelTextStyle: TextStyle(color: AppColors.textSecondary),

@@ -11,6 +11,7 @@ class Focusable extends StatefulWidget {
     this.onSelect,
     this.onLongPress,
     this.onFocused,
+    this.onHovered,
     this.focusScale = 1.08,
     this.borderRadius = const BorderRadius.all(Radius.circular(8)),
     this.autofocus = false,
@@ -22,7 +23,7 @@ class Focusable extends StatefulWidget {
 
   /// Long-press (touch/mouse) or right-click, e.g. to remove a rail item.
   final VoidCallback? onLongPress;
-  final ValueChanged<bool>? onFocused;
+  final ValueChanged<bool>? onFocused, onHovered;
   final double focusScale;
   final BorderRadius borderRadius;
   final bool autofocus;
@@ -60,7 +61,7 @@ class _FocusableState extends State<Focusable> {
     // Hover gets the same scale lift as focus but no ring — the ring is a
     // D-pad affordance, while mouse users already know where the pointer is.
     final lifted = _focused || _hovered;
-    return FocusableActionDetector(
+    final control = FocusableActionDetector(
       autofocus: widget.autofocus,
       mouseCursor: widget.onSelect != null
           ? SystemMouseCursors.click
@@ -94,7 +95,11 @@ class _FocusableState extends State<Focusable> {
             decoration: BoxDecoration(
               borderRadius: widget.borderRadius,
               border: Border.all(
-                color: _focused ? AppColors.focusRing : Colors.transparent,
+                color: _focused
+                    ? AppColors.focusRing
+                    : _hovered
+                    ? Colors.white24
+                    : Colors.transparent,
                 width: 3,
               ),
             ),
@@ -111,6 +116,12 @@ class _FocusableState extends State<Focusable> {
           ),
         ),
       ),
+    );
+    if (widget.onHovered == null) return control;
+    return MouseRegion(
+      onEnter: (_) => widget.onHovered!(true),
+      onExit: (_) => widget.onHovered!(false),
+      child: control,
     );
   }
 }

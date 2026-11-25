@@ -40,12 +40,11 @@ class SourcePayload {
 
   /// True when this payload describes the same source already stored locally,
   /// so provisioning can skip a needless catalog re-sync.
-  bool matches(Source existing) =>
+  bool matchesPlaylist(Source existing) =>
       existing.sourceType == type &&
       existing.serverUrl == serverUrl &&
       existing.username == username &&
-      existing.password == password &&
-      existing.epgUrl == epgUrl;
+      existing.password == password;
 
   SourcesCompanion toCompanion() => SourcesCompanion(
     name: Value(Uri.tryParse(serverUrl)?.host ?? 'Source'),

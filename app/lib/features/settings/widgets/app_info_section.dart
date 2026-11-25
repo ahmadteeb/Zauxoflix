@@ -71,7 +71,7 @@ class _AppInfoSectionState extends ConsumerState<AppInfoSection> {
             ? 'Update available: ${_release!.tag}'
             : 'You’re up to date.');
     return SettingsSection(
-      label: 'APP & UPDATES',
+      label: 'App & updates',
       children: [
         SettingsTile(
           icon: Icons.info_outline_rounded,
@@ -98,32 +98,20 @@ class _AppInfoSectionState extends ConsumerState<AppInfoSection> {
           style: TextStyle(color: AppColors.textSecondary, fontSize: 13),
         ),
         const SizedBox(height: 12),
-        Wrap(
-          spacing: 12,
-          runSpacing: 8,
-          children: [
-            OutlinedButton.icon(
-              onPressed: _checking ? null : _check,
-              icon: _checking
-                  ? const SizedBox.square(
-                      dimension: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.refresh_rounded, size: 18),
-              label: Text(_checking ? 'Checking…' : 'Check for updates'),
-            ),
-            FilledButton.icon(
-              onPressed: () => openExternalLink(
-                context,
-                ref,
-                _release?.page ?? ReleaseRepository.releasesPage,
-              ),
-              icon: const Icon(Icons.open_in_new_rounded, size: 18),
-              label: Text(
-                newer ? 'Download ${_release!.tag}' : 'Open GitHub Releases',
-              ),
-            ),
-          ],
+        SettingsAction(
+          onPressed: _checking ? null : _check,
+          busy: _checking,
+          icon: Icons.refresh_rounded,
+          title: _checking ? 'Checking…' : 'Check for updates',
+        ),
+        SettingsAction(
+          onPressed: () => openExternalLink(
+            context,
+            ref,
+            _release?.page ?? ReleaseRepository.releasesPage,
+          ),
+          icon: Icons.open_in_new_rounded,
+          title: newer ? 'Download ${_release!.tag}' : 'Open GitHub Releases',
         ),
         const Padding(
           padding: EdgeInsets.symmetric(vertical: 16),

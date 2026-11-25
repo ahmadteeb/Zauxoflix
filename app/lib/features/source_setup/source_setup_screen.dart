@@ -1,5 +1,5 @@
 import 'package:dio/dio.dart';
-import 'package:drift/drift.dart' show Value;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -8,6 +8,7 @@ import '../../core/theme/app_theme.dart';
 import '../../core/widgets/dpad_text_field.dart';
 import '../../data/backend/backend_providers.dart';
 import '../../data/db/app_database.dart';
+import '../../data/backend/provision_models.dart';
 import '../../data/providers.dart';
 import '../../data/xtream/xtream_api.dart';
 
@@ -72,25 +73,8 @@ class _SourceSetupScreenState extends ConsumerState<SourceSetupScreen> {
     }
   }
 
-  /// Replaces any existing local source with the freshly validated one. The
-  /// account was already saved to the backend, so every path into the catalog
-  /// agrees on the same creds.
-  Future<int> _adoptSource(SourcesCompanion companion) async {
-    final db = ref.read(databaseProvider);
-    return db.transaction(() async {
-      final existing = await db.watchActiveSource().first;
-      if (existing != null &&
-          existing.sourceType == companion.sourceType.value &&
-          existing.serverUrl == companion.serverUrl.value &&
-          existing.username == companion.username.value &&
-          existing.password == companion.password.value &&
-          existing.epgUrl == companion.epgUrl.value) {
-        return existing.id;
-      }
-      if (existing != null) await db.deleteSource(existing.id);
-      return db.insertSource(companion);
-    });
-  }
+  Future<int> _adoptSource(SourcePayload payload) async =>
+      (await ref.read(provisionRepositoryProvider).adoptSource(payload)).id;
 
   Future<int> _connectXtream() async {
     final credentials = XtreamCredentials(
@@ -119,12 +103,11 @@ class _SourceSetupScreenState extends ConsumerState<SourceSetupScreen> {
     );
 
     return _adoptSource(
-      SourcesCompanion(
-        name: Value(Uri.parse(credentials.serverUrl).host),
-        sourceType: const Value(SourceType.xtream),
-        serverUrl: Value(credentials.serverUrl),
-        username: Value(credentials.username),
-        password: Value(credentials.password),
+      SourcePayload(
+        type: SourceType.xtream,
+        serverUrl: credentials.serverUrl,
+        username: credentials.username,
+        password: credentials.password,
       ),
     );
   }
@@ -144,13 +127,12 @@ class _SourceSetupScreenState extends ConsumerState<SourceSetupScreen> {
     );
 
     return _adoptSource(
-      SourcesCompanion(
-        name: Value(Uri.tryParse(url)?.host ?? 'Playlist'),
-        sourceType: const Value(SourceType.m3u),
-        serverUrl: Value(url),
-        username: const Value(''),
-        password: const Value(''),
-        epgUrl: Value(epg.isEmpty ? null : epg),
+      SourcePayload(
+        type: SourceType.m3u,
+        serverUrl: url,
+        username: '',
+        password: '',
+        epgUrl: epg.isEmpty ? null : epg,
       ),
     );
   }

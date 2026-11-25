@@ -73,6 +73,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "2.13.1"
+  background_downloader:
+    dependency: "direct main"
+    description:
+      name: background_downloader
+      sha256: ae55e127f87397b372578fc9474568b879fa78326103c342e00160558d08e527
+      url: "https://pub.dev"
+    source: hosted
+    version: "9.5.9"
   boolean_selector:
     dependency: transitive
     description:
@@ -314,7 +322,7 @@ packages:
     source: hosted
     version: "1.3.3"
   ffi:
-    dependency: transitive
+    dependency: "direct main"
     description:
       name: ffi
       sha256: "6d7fd89431262d8f3125e81b50d3847a091d846eafcd4fdb88dd06f36d705a45"
@@ -358,6 +366,70 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "3.4.1"
+  flutter_inappwebview:
+    dependency: "direct main"
+    description:
+      name: flutter_inappwebview
+      sha256: "80092d13d3e29b6227e25b67973c67c7210bd5e35c4b747ca908e31eb71a46d5"
+      url: "https://pub.dev"
+    source: hosted
+    version: "6.1.5"
+  flutter_inappwebview_android:
+    dependency: transitive
+    description:
+      name: flutter_inappwebview_android
+      sha256: "62557c15a5c2db5d195cb3892aab74fcaec266d7b86d59a6f0027abd672cddba"
+      url: "https://pub.dev"
+    source: hosted
+    version: "1.1.3"
+  flutter_inappwebview_internal_annotations:
+    dependency: transitive
+    description:
+      name: flutter_inappwebview_internal_annotations
+      sha256: e30fba942e3debea7b7e6cdd4f0f59ce89dd403a9865193e3221293b6d1544c6
+      url: "https://pub.dev"
+    source: hosted
+    version: "1.3.0"
+  flutter_inappwebview_ios:
+    dependency: transitive
+    description:
+      name: flutter_inappwebview_ios
+      sha256: "5818cf9b26cf0cbb0f62ff50772217d41ea8d3d9cc00279c45f8aabaa1b4025d"
+      url: "https://pub.dev"
+    source: hosted
+    version: "1.1.2"
+  flutter_inappwebview_macos:
+    dependency: transitive
+    description:
+      name: flutter_inappwebview_macos
+      sha256: c1fbb86af1a3738e3541364d7d1866315ffb0468a1a77e34198c9be571287da1
+      url: "https://pub.dev"
+    source: hosted
+    version: "1.1.2"
+  flutter_inappwebview_platform_interface:
+    dependency: transitive
+    description:
+      name: flutter_inappwebview_platform_interface
+      sha256: cf5323e194096b6ede7a1ca808c3e0a078e4b33cc3f6338977d75b4024ba2500
+      url: "https://pub.dev"
+    source: hosted
+    version: "1.3.0+1"
+  flutter_inappwebview_web:
+    dependency: transitive
+    description:
+      name: flutter_inappwebview_web
+      sha256: "55f89c83b0a0d3b7893306b3bb545ba4770a4df018204917148ebb42dc14a598"
+      url: "https://pub.dev"
+    source: hosted
+    version: "1.1.2"
+  flutter_inappwebview_windows:
+    dependency: transitive
+    description:
+      name: flutter_inappwebview_windows
+      sha256: "8b4d3a46078a2cdc636c4a3d10d10f2a16882f6be607962dbfff8874d1642055"
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.6.0"
   flutter_lints:
     dependency: "direct dev"
     description:
@@ -399,7 +471,7 @@ packages:
     source: hosted
     version: "3.0.1"
   flutter_secure_storage_platform_interface:
-    dependency: transitive
+    dependency: "direct overridden"
     description:
       name: flutter_secure_storage_platform_interface
       sha256: "64951127f001f546891c86f414972bf49ef2c4c8a4c92c65f5790cc0c9100045"
@@ -422,6 +494,15 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "2.1.1"
+  flutter_secure_storage_webos:
+    dependency: "direct main"
+    description:
+      path: "packages/flutter_secure_storage"
+      ref: "3a742bb86b04e261044f0864f9b1f71acf0bbad3"
+      resolved-ref: "3a742bb86b04e261044f0864f9b1f71acf0bbad3"
+      url: "https://github.com/lg-flutter-webos/plugins.git"
+    source: git
+    version: "1.0.0"
   flutter_secure_storage_windows:
     dependency: transitive
     description:
@@ -752,6 +833,15 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "2.3.3"
+  path_provider_webos:
+    dependency: "direct main"
+    description:
+      path: "packages/path_provider"
+      ref: "3a742bb86b04e261044f0864f9b1f71acf0bbad3"
+      resolved-ref: "3a742bb86b04e261044f0864f9b1f71acf0bbad3"
+      url: "https://github.com/lg-flutter-webos/plugins.git"
+    source: git
+    version: "1.0.0"
   path_provider_windows:
     dependency: transitive
     description:
@@ -984,6 +1074,15 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "2.4.3"
+  shared_preferences_webos:
+    dependency: "direct main"
+    description:
+      path: "packages/shared_preferences"
+      ref: "3a742bb86b04e261044f0864f9b1f71acf0bbad3"
+      resolved-ref: "3a742bb86b04e261044f0864f9b1f71acf0bbad3"
+      url: "https://github.com/lg-flutter-webos/plugins.git"
+    source: git
+    version: "1.0.0"
   shared_preferences_windows:
     dependency: transitive
     description:
@@ -1118,7 +1217,7 @@ packages:
     source: hosted
     version: "0.1.5"
   sqlite3:
-    dependency: transitive
+    dependency: "direct main"
     description:
       name: sqlite3
       sha256: "3145bd74dcdb4fd6f5c6dda4d4e4490a8087d7f286a14dee5d37087290f0f8a2"
@@ -1349,6 +1448,15 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "2.4.3"
+  url_launcher_webos:
+    dependency: "direct main"
+    description:
+      path: "packages/url_launcher"
+      ref: "3a742bb86b04e261044f0864f9b1f71acf0bbad3"
+      resolved-ref: "3a742bb86b04e261044f0864f9b1f71acf0bbad3"
+      url: "https://github.com/lg-flutter-webos/plugins.git"
+    source: git
+    version: "1.0.0"
   url_launcher_windows:
     dependency: transitive
     description:
@@ -1398,7 +1506,7 @@ packages:
     source: hosted
     version: "2.11.0"
   video_player_platform_interface:
-    dependency: transitive
+    dependency: "direct main"
     description:
       name: video_player_platform_interface
       sha256: "92c0fbabe20c788e71fd10d26cea998d0d253282e65d145aed0818731cf593ce"
@@ -1421,6 +1529,13 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "2.4.0"
+  video_player_webos:
+    dependency: "direct main"
+    description:
+      path: "../third_party/video_player_webos"
+      relative: true
+    source: path
+    version: "1.0.0"
   vm_service:
     dependency: transitive
     description:

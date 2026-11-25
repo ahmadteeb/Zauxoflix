@@ -1,16 +1,23 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/models/media_item.dart';
+import '../../core/app_platform.dart';
 import '../../core/responsive/form_factor.dart';
 import '../../core/theme/app_theme.dart';
 import '../../data/db/app_database.dart';
 import '../../data/backend/backend_providers.dart';
 import '../../data/providers.dart';
-import '../../data/xtream/xtream_models.dart';
 import '../details/media_navigation.dart';
+import '../live/live_widgets.dart';
 import 'widgets/content_rail.dart';
 import 'widgets/hero_banner.dart';
+import 'widgets/home_spotlight.dart';
+import 'widgets/home_remote_navigation.dart';
+import 'widgets/top_charts_section.dart';
+import '../../data/discovery/home_feed.dart';
 
 const _welcomeHero = MediaItem(
   title: 'Welcome to Zauxoflix',
@@ -19,19 +26,56 @@ const _welcomeHero = MediaItem(
       'playlist will appear here.',
 );
 
-/// Detail fetch for the featured movie (plot, year, genre…). Cached per
-/// stream id so hero rebuilds don't re-hit the panel; failures just leave
-/// the metadata blank.
-final _heroInfoProvider = FutureProvider.family<XtreamVodInfo?, int>((
+EdgeInsets _homeScrollPadding(BuildContext context, FormFactor formFactor) =>
+    EdgeInsets.only(
+      bottom:
+          32 +
+          (formFactor == FormFactor.mobile
+              ? MediaQuery.paddingOf(context).bottom
+              : 0),
+    );
+
+final _recentHomeMovies = StreamProvider.autoDispose.family<List<Movie>, int>(
+  (ref, source) => ref.watch(databaseProvider).watchRecentMovies(source),
+);
+
+final _checkSeriesProvider = Provider.autoDispose.family<void, int>((
   ref,
-  streamId,
-) async {
-  final api = ref.watch(xtreamApiProvider);
-  if (api == null) return null;
-  try {
-    return await api.vodInfo(streamId);
-  } on Object {
-    return null;
+  sourceId,
+) {
+  final lastChecks = <int, DateTime>{};
+  bool busy = false;
+  bool active() =>
+      ref.mounted &&
+      ref.read(activeSourceProvider).value?.id == sourceId &&
+      WidgetsBinding.instance.lifecycleState != AppLifecycleState.paused &&
+      WidgetsBinding.instance.lifecycleState != AppLifecycleState.hidden;
+  Future<void> refresh() async {
+    if (busy || !active() || ref.read(syncControllerProvider) is SyncRunning) {
+      return;
+    }
+    final api = ref.read(xtreamApiProvider);
+    final resume = ref.read(resumeServiceProvider);
+    if (api == null || resume == null) return;
+    busy = true;
+    try {
+      await resume.refreshCaughtUp(api.seriesInfo, lastChecks, active: active);
+    } finally {
+      busy = false;
+    }
+  }
+
+  void schedule() => refresh().ignore();
+  final timer = Timer.periodic(const Duration(minutes: 15), (_) => schedule());
+  ref.onDispose(timer.cancel);
+  ref.listen(syncControllerProvider, (_, state) {
+    if (state is SyncSuccess) schedule();
+  });
+  if (isWebOsPlatform) {
+    final initial = Timer(const Duration(seconds: 3), schedule);
+    ref.onDispose(initial.cancel);
+  } else {
+    schedule();
   }
 });
 
@@ -117,18 +161,21 @@ class HomeScreen extends ConsumerWidget {
     final syncing = ref.watch(syncControllerProvider) is SyncRunning;
 
     if (source == null) return _HomeSkeleton(formFactor: formFactor);
+    if (auth is Authenticated && source.sourceType == SourceType.xtream) {
+      ref.watch(_checkSeriesProvider(source.id));
+    }
 
-    return StreamBuilder<List<Movie>>(
-      stream: db.watchRecentMovies(source.id),
-      builder: (context, moviesSnapshot) {
-        if ((!moviesSnapshot.hasData && !moviesSnapshot.hasError) ||
+    final recent = ref.watch(_recentHomeMovies(source.id));
+    return Builder(
+      builder: (context) {
+        if ((!isWebOsPlatform && recent.isLoading && !recent.hasValue) ||
             (syncing &&
                 source.lastSyncAt == null &&
-                (moviesSnapshot.data?.isEmpty ?? true))) {
+                (recent.value?.isEmpty ?? true))) {
           return _HomeSkeleton(formFactor: formFactor);
         }
         final movies = [
-          for (final m in moviesSnapshot.data ?? const <Movie>[])
+          for (final m in recent.value ?? const <Movie>[])
             MediaItem(
               title: m.name,
               imageUrl: m.icon,
@@ -137,67 +184,20 @@ class HomeScreen extends ConsumerWidget {
               containerExtension: m.containerExtension,
             ),
         ];
-        final heroMovie = (moviesSnapshot.data?.isNotEmpty ?? false)
-            ? moviesSnapshot.data!.first
-            : null;
-        final heroInfo = heroMovie == null
-            ? null
-            : ref.watch(_heroInfoProvider(heroMovie.streamId)).value;
-        final hero = heroMovie == null
-            ? _welcomeHero
-            : MediaItem(
-                title: heroMovie.name,
-                subtitle: heroInfo?.plot ?? '',
-                imageUrl: heroInfo?.backdrop ?? heroMovie.icon,
-                type: MediaType.movie,
-                id: heroMovie.streamId,
-                containerExtension: heroMovie.containerExtension,
-              );
-        final heroMeta = heroMovie == null
-            ? ''
-            : [
-                if (heroMovie.rating case final r? when r > 0)
-                  '★ ${r.toStringAsFixed(1)}',
-                if (heroInfo?.releaseDate case final d? when d.isNotEmpty)
-                  d.split('-').first,
-                ?heroInfo?.durationText,
-                ?heroInfo?.genre,
-              ].join('  ·  ');
         void open(MediaItem item) => openMediaItem(context, ref, item);
 
-        return ListView(
-          padding: const EdgeInsets.only(bottom: 32),
+        final list = ListView(
+          padding: _homeScrollPadding(context, formFactor),
           children: [
-            StreamBuilder<bool>(
-              stream: hero.id == null
-                  ? null
-                  : db.watchIsFavorite(source.id, CatalogKind.vod, hero.id!),
-              builder: (context, favSnapshot) {
-                final inList = favSnapshot.data ?? false;
-                return HeroBanner(
-                  loading: !moviesSnapshot.hasData && !moviesSnapshot.hasError,
-                  item: hero,
-                  formFactor: formFactor,
-                  metaLine: heroMeta,
-                  onPlay: hero.id == null ? null : () => open(hero),
-                  inMyList: inList,
-                  onToggleMyList: hero.id == null
-                      ? null
-                      : () => inList
-                            ? db.removeFavorite(
-                                source.id,
-                                CatalogKind.vod,
-                                hero.id!,
-                              )
-                            : db.addFavorite(
-                                sourceId: source.id,
-                                kind: CatalogKind.vod,
-                                itemId: hero.id!,
-                                name: hero.title,
-                                imageUrl: hero.imageUrl,
-                              ),
-                );
-              },
+            HomeFocusRow(
+              featured: true,
+              child: HomeSpotlight(
+                key: ValueKey(source.id),
+                source: source.id,
+                formFactor: formFactor,
+                fallback: recent.value?.firstOrNull,
+                welcome: _welcomeHero,
+              ),
             ),
             StreamBuilder<List<PlaybackPosition>>(
               stream: db.watchContinueWatching(source.id),
@@ -207,22 +207,29 @@ class HomeScreen extends ConsumerWidget {
                   for (final p in positions)
                     MediaItem(
                       title: p.title,
+                      continueWatching: true,
+                      type: p.kind == WatchKind.episode
+                          ? MediaType.series
+                          : MediaType.movie,
+                      id: p.kind == WatchKind.episode ? p.seriesId : p.itemId,
                       subtitle: p.subtitle,
                       imageUrl: p.imageUrl,
                       progress: p.durationSecs <= 0
-                          ? 0
+                          ? null
                           : p.positionSecs / p.durationSecs,
                       // Subtitle is "S2 E2 — <episode title>"; the chip only
                       // wants the season/episode part.
                       badge: p.kind == WatchKind.episode
-                          ? p.subtitle.split(' — ').first
+                          ? '${p.positionSecs == 0 ? 'Next · ' : ''}${p.subtitle.split(' — ').first}'
                           : null,
                     ),
                 ];
                 return ContentRail(
                   title: 'Continue Watching',
+                  wide: true,
                   items: items,
                   formFactor: formFactor,
+                  onDetails: open,
                   onSelect: (item) => playResumable(
                     context,
                     ref,
@@ -235,6 +242,33 @@ class HomeScreen extends ConsumerWidget {
                   ),
                 );
               },
+            ),
+            LiveForYouRail(sourceId: source.id, formFactor: formFactor),
+            Consumer(
+              builder: (context, ref, _) {
+                final feed = ref.watch(homeDisplayFeedProvider(source.id));
+                return Column(
+                  children: [
+                    for (final movies in [true, false])
+                      ContentRail(
+                        key: ValueKey((source.id, movies)),
+                        title: movies
+                            ? 'Recommended movies'
+                            : 'Recommended series',
+                        items:
+                            (movies ? feed?.movies : feed?.series) ?? const [],
+                        formFactor: formFactor,
+                        onSelect: open,
+                      ),
+                  ],
+                );
+              },
+            ),
+            TopChartsSection(
+              key: ValueKey((source.id, 'charts')),
+              source: source.id,
+              formFactor: formFactor,
+              loadWhenVisible: isWebOsPlatform,
             ),
             StreamBuilder<List<Favorite>>(
               stream: db.watchFavorites(source.id),
@@ -261,7 +295,7 @@ class HomeScreen extends ConsumerWidget {
               title: 'Recently Added Movies',
               items: movies,
               formFactor: formFactor,
-              loading: !moviesSnapshot.hasData,
+              loading: recent.isLoading && !recent.hasValue,
               onSelect: open,
             ),
             StreamBuilder<List<SeriesItem>>(
@@ -282,30 +316,11 @@ class HomeScreen extends ConsumerWidget {
                 onSelect: open,
               ),
             ),
-            StreamBuilder<List<LiveChannel>>(
-              stream: db.watchLiveChannels(source.id, limit: 20),
-              builder: (context, snapshot) => ContentRail(
-                title: 'Live Channels',
-                wide: true,
-                items: [
-                  for (final c in snapshot.data ?? const <LiveChannel>[])
-                    MediaItem(
-                      title: c.name,
-                      subtitle: c.channelNumber == null
-                          ? ''
-                          : 'CH ${c.channelNumber}',
-                      imageUrl: c.icon,
-                      type: MediaType.live,
-                      id: c.streamId,
-                    ),
-                ],
-                formFactor: formFactor,
-                loading: !snapshot.hasData,
-                onSelect: open,
-              ),
-            ),
           ],
         );
+        return formFactor.isTv
+            ? HomeRemoteNavigation(key: ValueKey(source.id), child: list)
+            : list;
       },
     );
   }
@@ -318,13 +333,13 @@ class _HomeSkeleton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => ListView(
-    padding: const EdgeInsets.only(bottom: 32),
+    padding: _homeScrollPadding(context, formFactor),
     children: [
       HeroBanner(item: _welcomeHero, formFactor: formFactor, loading: true),
       for (final (title, wide) in const [
         ('Recently Added Movies', false),
         ('New Series', false),
-        ('Live Channels', true),
+        ('Live for you', true),
       ])
         ContentRail(
           title: title,

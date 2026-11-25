@@ -38,6 +38,10 @@ class DemoAuth extends AuthController {
 
 void main() {
   testWidgets('capture Settings and IPTV information', (tester) async {
+    final output = Directory(
+      Platform.environment['ZAUXOFLIX_SETTINGS_CAPTURE_DIR'] ??
+          '../screenshots',
+    );
     await tester.runAsync(() async {
       final fonts = Platform.environment['ZAUXOFLIX_FONT_DIR'];
       if (fonts == null) {
@@ -47,9 +51,9 @@ void main() {
       }
       final roboto = FontLoader('Roboto');
       for (final name in [
-        'Roboto-Regular.ttf',
-        'Roboto-Medium.ttf',
-        'Roboto-Bold.ttf',
+        'roboto-regular.ttf',
+        'roboto-medium.ttf',
+        'roboto-bold.ttf',
       ]) {
         roboto.addFont(
           Future.value(
@@ -61,11 +65,12 @@ void main() {
       await (FontLoader('MaterialIcons')..addFont(
             Future.value(
               ByteData.sublistView(
-                await File('$fonts/MaterialIcons-Regular.otf').readAsBytes(),
+                await File('$fonts/materialicons-regular.otf').readAsBytes(),
               ),
             ),
           ))
           .load();
+      await output.create(recursive: true);
     });
     tester.view.devicePixelRatio = 1;
     tester.view.physicalSize = const Size(1120, 1600);
@@ -140,6 +145,8 @@ void main() {
     );
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
+    await tester.tap(find.text('App & updates'));
+    await tester.pumpAndSettle();
     await tester.ensureVisible(find.text('Check for updates'));
     await tester.tap(find.text('Check for updates'));
     await tester.pump();
@@ -154,22 +161,19 @@ void main() {
                 .toImage();
         final bytes = await image.toByteData(format: ui.ImageByteFormat.png);
         await File(
-          '../screenshots/$name.png',
+          '${output.path}/$name.png',
         ).writeAsBytes(bytes!.buffer.asUint8List());
         image.dispose();
       });
     }
 
-    await tester.runAsync(
-      () => precacheImage(
-        const AssetImage('assets/images/github-mark.png'),
-        key.currentContext!,
-      ),
-    );
-    await tester.pump();
+    await tester.tap(find.widgetWithText(TextButton, 'Account'));
+    await tester.pumpAndSettle();
     await capture('settings');
     tester.view.physicalSize = const Size(1120, 900);
     await tester.pump();
+    await tester.tap(find.widgetWithText(TextButton, 'Playlist'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('IPTV information'));
     await tester.pumpAndSettle();
     await capture('iptv-information');

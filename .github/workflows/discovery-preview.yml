@@ -1,0 +1,22 @@
+name: Windows discovery preview
+on: workflow_dispatch
+permissions:
+  contents: read
+jobs:
+  preview:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.47.9
+          cache: true
+      - uses: NuGet/setup-nuget@v2
+      - name: Build sample catalog
+        working-directory: app
+        run: ./tool/package_discovery_preview.ps1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Zauxoflix-Discovery-Preview-Windows
+          path: app/build/windows/x64/runner/Release/
+          if-no-files-found: error

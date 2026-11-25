@@ -199,6 +199,7 @@ class RemotePlaybackController extends Notifier<void> {
           url: url,
           title: channel.name,
           live: true,
+          liveLogo: channel.icon,
           identity: identity,
         );
 
@@ -232,6 +233,9 @@ class RemotePlaybackController extends Notifier<void> {
               PlayerItem(
                 url: api.seriesEpisodeUrl(e.id, e.containerExtension),
                 title: series.name,
+                episodeImage: e.image,
+                seriesCover: series.cover,
+                containerExtension: e.containerExtension,
                 subtitle: 'S${e.season} E${e.episodeNum} — ${e.title}',
                 startAt: i == index ? startAt : null,
                 identity: PlaybackIdentity(

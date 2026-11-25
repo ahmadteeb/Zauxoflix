@@ -1,3 +1,4 @@
+import 'package:drift/drift.dart' show Value;
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../db/app_database.dart';
@@ -16,12 +17,25 @@ class ProvisionRepository {
   /// catalog anchor changed (new or different creds) so the caller can trigger
   /// a re-sync; false when it already matched.
   Future<bool> applyProvisionedSource(SourcePayload payload) =>
+      adoptSource(payload).then((result) => result.changed);
+
+  Future<({int id, bool changed})> adoptSource(SourcePayload payload) =>
       _db.transaction(() async {
         final existing = await _db.watchActiveSource().first;
-        if (existing != null && payload.matches(existing)) return false;
+        if (existing != null && payload.matchesPlaylist(existing)) {
+          final changed = existing.epgUrl != payload.epgUrl;
+          if (changed) {
+            await (_db.update(_db.sources)
+                  ..where((s) => s.id.equals(existing.id)))
+                .write(SourcesCompanion(epgUrl: Value(payload.epgUrl)));
+          }
+          return (id: existing.id, changed: changed);
+        }
         if (existing != null) await _db.deleteSource(existing.id);
-        await _db.insertSource(payload.toCompanion());
-        return true;
+        return (
+          id: await _db.insertSource(payload.toCompanion()),
+          changed: true,
+        );
       });
 
   Future<void> saveXtreamSource({

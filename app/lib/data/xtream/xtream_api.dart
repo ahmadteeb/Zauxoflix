@@ -100,6 +100,15 @@ class XtreamApi {
   /// Raw JSON body for [action]; large list payloads are parsed off the main
   /// isolate by the caller instead of here.
   Future<String> raw({String? action, Map<String, String>? params}) async {
+    final response = await fetch(action: action, params: params);
+    return response.data!;
+  }
+
+  Future<Response<String>> fetch({
+    String? action,
+    Map<String, String>? params,
+    Map<String, String> validators = const {},
+  }) async {
     final query = {
       'username': credentials.username,
       'password': credentials.password,
@@ -110,12 +119,18 @@ class XtreamApi {
       final response = await _dio.get<String>(
         '${credentials.serverUrl}/player_api.php',
         queryParameters: query,
+        options: Options(
+          headers: validators,
+          validateStatus: (s) =>
+              s != null &&
+              (s >= 200 && s < 300 || s == 304 && validators.isNotEmpty),
+        ),
       );
       final body = response.data;
-      if (body == null || body.isEmpty) {
+      if (response.statusCode != 304 && (body == null || body.isEmpty)) {
         throw XtreamApiException('Empty response from server.');
       }
-      return body;
+      return response;
     } on DioException catch (e) {
       throw XtreamApiException(switch (e.type) {
         DioExceptionType.connectionTimeout || DioExceptionType.receiveTimeout =>

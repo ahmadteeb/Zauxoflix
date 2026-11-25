@@ -118,6 +118,43 @@ void main() {
       expect(changed, isFalse);
     });
 
+    test(
+      'removing a legacy discovered guide or changing the override preserves the source',
+      () async {
+        const payload = SourcePayload(
+          type: SourceType.m3u,
+          serverUrl: 'http://local/list',
+          username: '',
+          password: '',
+        );
+        final repo = _repoWith(db, {});
+        final original = await repo.adoptSource(payload);
+        await db.addFavorite(
+          sourceId: original.id,
+          kind: CatalogKind.live,
+          itemId: 1,
+          name: 'News',
+        );
+        await (db.update(
+          db.sources,
+        )..where((s) => s.id.equals(original.id))).write(
+          const SourcesCompanion(epgUrl: Value('http://local/legacy-guide')),
+        );
+        expect(await repo.adoptSource(payload), (
+          id: original.id,
+          changed: true,
+        ));
+        expect(await repo.adoptSource(payload), (
+          id: original.id,
+          changed: false,
+        ));
+        expect(
+          (await db.watchFavorites(original.id).first).single.name,
+          'News',
+        );
+      },
+    );
+
     test('replaces the row when credentials change', () async {
       await db.insertSource(
         SourcesCompanion(

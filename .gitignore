@@ -1,2 +1,17 @@
 .claude/
 .vscode/
+.idea/
+.env
+.env.*
+!.env.example
+*.local.json
+*.keystore
+*.jks
+*.p12
+*.pfx
+*.sqlite
+*.sqlite3
+*.sqlite-wal
+*.sqlite-shm
+*.sqlite-journal
+__pycache__/

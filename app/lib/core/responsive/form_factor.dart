@@ -49,11 +49,19 @@ FormFactor formFactorOf(BuildContext context, WidgetRef ref) {
   final override = ref.watch(formFactorOverrideProvider);
   if (override != null) return override;
   if (kTvBuild) return FormFactor.tv;
-  final width = MediaQuery.sizeOf(context).width;
-  if (width < 700) return FormFactor.mobile;
+  final size = MediaQuery.sizeOf(context);
+  if (size.width < 700 || (isHandheldPlatform && size.shortestSide < 600)) {
+    return FormFactor.mobile;
+  }
+  final width = size.width;
   if (width < 1100) return FormFactor.tablet;
   return FormFactor.desktop;
 }
+
+bool get isHandheldPlatform =>
+    !kTvBuild &&
+    (defaultTargetPlatform == TargetPlatform.android ||
+        defaultTargetPlatform == TargetPlatform.iOS);
 
 extension FormFactorX on FormFactor {
   bool get isTv => this == FormFactor.tv;

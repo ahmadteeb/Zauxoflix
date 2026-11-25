@@ -58,13 +58,18 @@ class RemoteDevice {
     lastSeenAt: DateTime.tryParse(json['lastSeenAt'] as String? ?? ''),
   );
 
-  bool get isTv => platform == 'androidtv';
+  bool get isTv => switch (platform) {
+    'androidtv' || 'webos' || 'tizen' => true,
+    _ => false,
+  };
 
   String get displayName {
     final label = this.label?.trim();
     if (label != null && label.isNotEmpty) return label;
     return switch (platform) {
       'androidtv' => 'Android TV',
+      'webos' => 'LG webOS TV',
+      'tizen' => 'Samsung TV',
       'android' => 'Android phone',
       'ios' => 'iPhone',
       'linux' => 'Linux device',

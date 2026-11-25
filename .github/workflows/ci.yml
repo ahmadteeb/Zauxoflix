@@ -14,7 +14,7 @@ on:
       tag_name:
         description: Release Tag Version (e.g. v1.0.0)
         required: false
-        default: v1.0.0
+        default: v1.1.0
 
 permissions:
   contents: read
@@ -24,6 +24,7 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
+  TRAKT_CLIENT_ID: ${{ vars.TRAKT_CLIENT_ID }}
   FLUTTER_VERSION: 3.47.9
   TAG: ${{ github.event.inputs.tag_name || github.ref_name }}
   BUILD_NUMBER: ${{ github.run_number }}
@@ -122,7 +123,7 @@ jobs:
       - name: Build Linux release
         working-directory: app
         run: |
-          DEFINES=()
+          DEFINES=("--dart-define=TRAKT_CLIENT_ID=$TRAKT_CLIENT_ID")
           [ -z "$SUPABASE_URL" ] || DEFINES+=("--dart-define=SUPABASE_URL=$SUPABASE_URL")
           [ -z "$SUPABASE_ANON_KEY" ] || DEFINES+=("--dart-define=SUPABASE_ANON_KEY=$SUPABASE_ANON_KEY")
           flutter pub get
@@ -271,7 +272,7 @@ jobs:
       - name: Build Windows release
         working-directory: app
         run: |
-          DEFINES=()
+          DEFINES=("--dart-define=TRAKT_CLIENT_ID=$TRAKT_CLIENT_ID")
           [ -z "$SUPABASE_URL" ] || DEFINES+=("--dart-define=SUPABASE_URL=$SUPABASE_URL")
           [ -z "$SUPABASE_ANON_KEY" ] || DEFINES+=("--dart-define=SUPABASE_ANON_KEY=$SUPABASE_ANON_KEY")
           flutter pub get
@@ -316,7 +317,7 @@ jobs:
       - name: Build macOS release
         working-directory: app
         run: |
-          DEFINES=()
+          DEFINES=("--dart-define=TRAKT_CLIENT_ID=$TRAKT_CLIENT_ID")
           [ -z "$SUPABASE_URL" ] || DEFINES+=("--dart-define=SUPABASE_URL=$SUPABASE_URL")
           [ -z "$SUPABASE_ANON_KEY" ] || DEFINES+=("--dart-define=SUPABASE_ANON_KEY=$SUPABASE_ANON_KEY")
           flutter pub get
@@ -362,7 +363,7 @@ jobs:
       - name: Build unsigned iOS release
         working-directory: app
         run: |
-          DEFINES=()
+          DEFINES=("--dart-define=TRAKT_CLIENT_ID=$TRAKT_CLIENT_ID")
           [ -z "$SUPABASE_URL" ] || DEFINES+=("--dart-define=SUPABASE_URL=$SUPABASE_URL")
           [ -z "$SUPABASE_ANON_KEY" ] || DEFINES+=("--dart-define=SUPABASE_ANON_KEY=$SUPABASE_ANON_KEY")
           flutter pub get
@@ -414,7 +415,7 @@ jobs:
       - name: Build Android release APK
         working-directory: app
         run: |
-          DEFINES=()
+          DEFINES=("--dart-define=TRAKT_CLIENT_ID=$TRAKT_CLIENT_ID")
           [ -z "$SUPABASE_URL" ] || DEFINES+=("--dart-define=SUPABASE_URL=$SUPABASE_URL")
           [ -z "$SUPABASE_ANON_KEY" ] || DEFINES+=("--dart-define=SUPABASE_ANON_KEY=$SUPABASE_ANON_KEY")
           flutter pub get
@@ -559,7 +560,7 @@ jobs:
       - name: Build unsigned Tizen TPK
         working-directory: app
         run: |
-          DEFINES=()
+          DEFINES=("--dart-define=TRAKT_CLIENT_ID=$TRAKT_CLIENT_ID")
           [ -z "$SUPABASE_URL" ] || DEFINES+=("--dart-define=SUPABASE_URL=$SUPABASE_URL")
           [ -z "$SUPABASE_ANON_KEY" ] || DEFINES+=("--dart-define=SUPABASE_ANON_KEY=$SUPABASE_ANON_KEY")
 
@@ -625,9 +626,13 @@ jobs:
           sudo apt-get install -y cmake ninja-build clang lld binutils-arm-linux-gnueabi pkg-config wget
           # lld as default linker supports the ARM cross-link (armelf_linux_eabi)
           sudo ln -sf /usr/bin/ld.lld /usr/bin/ld
-          npm install -g @webosose/ares-cli
+          npm install -g @webos-tools/cli@3.2.6
+          ares-config --profile tv
 
-          git clone https://github.com/lg-flutter-webos/flutter-webos.git "$HOME/flutter-webos"
+          git init "$HOME/flutter-webos"
+          git -C "$HOME/flutter-webos" remote add origin https://github.com/lg-flutter-webos/flutter-webos.git
+          git -C "$HOME/flutter-webos" fetch --depth=1 origin 950398131830e9bd5dc91e588c3db8f5c42322be
+          git -C "$HOME/flutter-webos" checkout --detach FETCH_HEAD
           echo "$HOME/flutter-webos/bin" >> "$GITHUB_PATH"
           "$HOME/flutter-webos/bin/flutter-webos" precache -f
 
@@ -650,19 +655,24 @@ jobs:
             fi
           fi
 
-          [ -d webos ] || flutter-webos create --platforms webos .
-
-          DEFINES=()
-          [ -z "$SUPABASE_URL" ] || DEFINES+=("--dart-define=SUPABASE_URL=$SUPABASE_URL")
-          [ -z "$SUPABASE_ANON_KEY" ] || DEFINES+=("--dart-define=SUPABASE_ANON_KEY=$SUPABASE_ANON_KEY")
-
-          flutter-webos build webos --release --build-name="${TAG#v}" --build-number="$BUILD_NUMBER" "${DEFINES[@]}"
+          : "${SUPABASE_URL:?Configure the SUPABASE_URL Actions secret}"
+          : "${SUPABASE_ANON_KEY:?Configure the SUPABASE_ANON_KEY Actions secret}"
+          bash tool/webos/build.sh --build-name="${TAG#v}" --build-number="$BUILD_NUMBER" \
+            "--dart-define=TRAKT_CLIENT_ID=$TRAKT_CLIENT_ID" \
+            "--dart-define=SUPABASE_URL=$SUPABASE_URL" \
+            "--dart-define=SUPABASE_ANON_KEY=$SUPABASE_ANON_KEY"
 
       - name: Package webOS IPK
         run: |
-          IPK_FILE=$(find app/build -name "*.ipk" -type f -print -quit)
+          IPK_FILE=$(find app/build/webos -name "com.flutter.app.zauxoflix_*.ipk" -type f -print -quit)
           [ -n "$IPK_FILE" ] || { echo "No .ipk produced"; exit 1; }
+          CONTENTS=$(ar p "$IPK_FILE" data.tar.gz | tar -tzf -)
+          for plugin in flutter_secure_storage shared_preferences video_player; do
+            library="usr/palm/applications/com.flutter.app.zauxoflix/lib/lib${plugin}_webos_plugin.so"
+            grep -Fxq "$library" <<< "$CONTENTS" || { echo "IPK missing $library"; exit 1; }
+          done
           cp "$IPK_FILE" "$GITHUB_WORKSPACE/Zauxoflix-${TAG}-webos.ipk"
+          cp app/build/webos/trailers/com.flutter.app.zauxoflix.trailer_*.ipk "$GITHUB_WORKSPACE/Zauxoflix-${TAG}-trailers-webos.ipk"
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4

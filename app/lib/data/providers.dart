@@ -6,6 +6,7 @@ import 'db/app_database.dart';
 import 'resume/resume_service.dart';
 import 'sync/catalog_sync_service.dart';
 import 'xtream/xtream_api.dart';
+import 'xtream/xtream_models.dart';
 
 final databaseProvider = Provider<AppDatabase>((ref) {
   final db = AppDatabase();
@@ -29,6 +30,25 @@ final xtreamApiProvider = Provider<XtreamApi?>((ref) {
     ),
   );
 });
+
+/// Shared by the hero, cards, details and player. Cache successful metadata
+/// briefly as the viewer moves between a poster and its details.
+final catalogVodInfoProvider = FutureProvider.autoDispose
+    .family<XtreamVodInfo?, int>((ref, id) async {
+      final api = ref.watch(xtreamApiProvider);
+      if (api == null) return null;
+      try {
+        final info = await api.vodInfo(id);
+        if (ref.mounted) {
+          final link = ref.keepAlive();
+          final timer = Timer(const Duration(minutes: 2), link.close);
+          ref.onDispose(timer.cancel);
+        }
+        return info;
+      } catch (_) {
+        return null;
+      }
+    });
 
 /// Resolves playback URLs for both source types: M3U rows carry their own
 /// URL, Xtream rows build one from credentials.
@@ -124,20 +144,41 @@ class SyncController extends Notifier<SyncState> {
   @override
   SyncState build() => const SyncIdle();
 
-  Future<bool> syncSource(Source source) async {
-    if (state is SyncRunning) return false;
+  Source? _active;
+  Future<bool>? _completion;
+  Completer<bool>? _catalogReady;
+
+  Future<bool> syncSource(Source source, {bool waitForGuide = true}) async {
+    final active = _active;
+    if (active != null &&
+        (active.id != source.id || active.epgUrl != source.epgUrl)) {
+      await _completion;
+      return syncSource(source, waitForGuide: waitForGuide);
+    }
+    if (active == null) {
+      _active = source;
+      _catalogReady = Completer<bool>();
+      _completion = _run(source, _catalogReady!);
+    }
+    return waitForGuide ? _completion! : _catalogReady!.future;
+  }
+
+  Future<bool> _run(Source source, Completer<bool> catalogReady) async {
     state = const SyncRunning('Connecting…');
     try {
-      final service = CatalogSyncService(ref.read(databaseProvider));
-      await service.syncAll(
+      await CatalogSyncService(ref.read(databaseProvider)).syncAll(
         source,
         onStage: (stage) => state = SyncRunning(stage),
+        onCatalogReady: () => catalogReady.complete(true),
       );
       state = const SyncSuccess();
       return true;
     } catch (e) {
       state = SyncFailure(syncErrorMessage(e));
       return false;
+    } finally {
+      if (!catalogReady.isCompleted) catalogReady.complete(false);
+      _active = null;
     }
   }
 }

@@ -4,6 +4,7 @@ import android.app.UiModeManager
 import android.content.Context
 import android.content.pm.PackageManager
 import android.content.res.Configuration
+import android.os.StatFs
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -17,6 +18,17 @@ class MainActivity : FlutterActivity() {
                     "isTv" -> result.success(isTvDevice())
                     else -> result.notImplemented()
                 }
+            }
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "zauxoflix/download_storage")
+            .setMethodCallHandler { call, result ->
+                if (call.method != "freeBytes") {
+                    result.notImplemented()
+                    return@setMethodCallHandler
+                }
+                val path = call.arguments as? String
+                result.success(path?.let {
+                    runCatching { StatFs(it).availableBytes }.getOrNull()
+                })
             }
     }
 

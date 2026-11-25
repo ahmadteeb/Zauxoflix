@@ -68,6 +68,7 @@ class _DpadTextFieldState extends State<DpadTextField> {
     LogicalKeyboardKey.arrowUp,
     LogicalKeyboardKey.escape,
     LogicalKeyboardKey.goBack,
+    LogicalKeyboardKey.browserBack,
   };
 
   KeyEventResult _onKeyEvent(FocusNode node, KeyEvent event) {

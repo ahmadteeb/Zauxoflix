@@ -27,11 +27,14 @@ migrate_working_dir/
 **/doc/api/
 **/ios/Flutter/.last_build_id
 .dart_tool/
+/assets/private_imdb/*
+!/assets/private_imdb/README.txt
 .flutter-plugins-dependencies
 .pub-cache/
 .pub/
 /build/
 /coverage/
+/webos/
 
 # Symbolication related
 app.*.symbols

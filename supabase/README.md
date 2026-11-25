@@ -62,14 +62,30 @@ Requests are throttled by gateway address, claims additionally by verified accou
 
 ## Deployment and checks
 
-Apply every migration before deploying the updated function, and rebuild the Flutter app with its RPC-only repositories. Older builds that query tables directly are incompatible with the unexposed schema:
+Zauxoflix 1.1.0 uses the same four Postgres migrations as 1.0.2. If your fork's Supabase project already has all four versions through `20261114030000`, the migration plan should be empty. Earlier installations and new projects apply the missing files in order. Keep the existing migration versions in place.
+
+Use the [Supabase CLI v3](https://supabase.com/docs/reference/cli/introduction) and Python 3 from the repository root. The script targets the project reference you provide, lists its applied migrations, and previews the pending SQL.
 
 ```bash
-supabase db push
-supabase functions deploy tv-pairing
+supabase login
+python supabase/scripts/update_database.py YOUR_PROJECT_REF
+```
+
+After reviewing the plan, apply the pending migrations with `--apply`. For a fresh project or when updating the Edge Function, add `--deploy-pairing`. The script deploys the function after migrations succeed.
+
+```bash
+python supabase/scripts/update_database.py YOUR_PROJECT_REF --apply --deploy-pairing
 ```
 
 The gateway JWT check stays disabled for this function because start/poll run before login. The claim path verifies the bearer JWT itself. Never expose the service key in Flutter or expose `app_data` / `private` in the Data API.
+
+### On-device SQLite upgrade
+
+Flutter upgrades the local library from schema 6 to 13 when the app opens the database. The transaction adds search and discovery indexes and backfills title data, then creates recommendation snapshots, watched-episode tracking, and Live TV viewing, tuning, and guide-link tables. Existing playlists, favorites, playback positions, and downloads remain in place. Back up the device's application-support directory before upgrading if you need a rollback copy. Restoring that backup lets an older app use the library again.
+
+Search history saves separately on the device for each account and playlist. It requires no Supabase table or RPC.
+
+### Local checks
 
 ```bash
 deno fmt --check supabase/functions supabase/tests

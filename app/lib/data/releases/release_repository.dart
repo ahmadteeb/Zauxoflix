@@ -1,11 +1,26 @@
+import 'dart:convert';
+
 import 'package:dio/dio.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:pub_semver/pub_semver.dart';
 
-final packageInfoProvider = FutureProvider<PackageInfo>(
-  (ref) => PackageInfo.fromPlatform(),
-);
+import '../../core/app_platform.dart';
+
+final packageInfoProvider = FutureProvider<PackageInfo>((ref) async {
+  if (!isWebOsPlatform) return PackageInfo.fromPlatform();
+  // flutter-webos includes this asset in its native bundle.
+  final info =
+      jsonDecode(await rootBundle.loadString('version.json'))
+          as Map<String, dynamic>;
+  return PackageInfo(
+    appName: info['app_name'] as String,
+    packageName: info['package_name'] as String,
+    version: info['version'] as String,
+    buildNumber: info['build_number'] as String,
+  );
+});
 final releaseRepositoryProvider = Provider<ReleaseRepository>((ref) {
   final repository = ReleaseRepository();
   ref.onDispose(repository.dispose);

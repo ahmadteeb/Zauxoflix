@@ -7,13 +7,17 @@ import '../../core/theme/app_theme.dart';
 import '../../data/backend/auth_models.dart';
 import '../../data/backend/backend_providers.dart';
 import '../../data/db/app_database.dart';
+import '../../data/downloads/download_preferences.dart';
 import '../../data/providers.dart';
+import '../downloads/download_network_setting.dart';
+import '../player/autoplay_preference.dart';
+import '../shell/top_nav_bar.dart';
 import 'account_dialogs.dart';
 import 'iptv_info_dialog.dart';
-import 'widgets/app_info_section.dart';
-import 'widgets/settings_section.dart';
 import 'pair_tv_dialog.dart';
-import '../shell/top_nav_bar.dart';
+import 'widgets/app_info_section.dart';
+import 'widgets/settings_navigation.dart';
+import 'widgets/settings_section.dart';
 
 class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
@@ -22,266 +26,453 @@ class SettingsScreen extends ConsumerStatefulWidget {
   ConsumerState<SettingsScreen> createState() => _SettingsScreenState();
 }
 
+class _AccountIdentity extends StatelessWidget {
+  const _AccountIdentity({required this.name, required this.details});
+
+  final String name, details;
+
+  @override
+  Widget build(BuildContext context) {
+    final words = name.split(RegExp(r'\s+')).where((word) => word.isNotEmpty);
+    final initials = words.take(2).map((word) => word.characters.first).join();
+    final corners = BorderRadius.circular(16);
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        borderRadius: corners,
+        color: MediaQuery.highContrastOf(context)
+            ? AppColors.surfaceLight
+            : null,
+        gradient: MediaQuery.highContrastOf(context)
+            ? null
+            : AppColors.panelGradient,
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Row(
+          children: [
+            ExcludeSemantics(
+              child: Container(
+                height: 54,
+                width: 54,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(16),
+                  color: AppColors.selectionSurface,
+                ),
+                child: initials.isEmpty
+                    ? const Icon(Icons.person_outline_rounded)
+                    : Text(
+                        initials.toUpperCase(),
+                        maxLines: 1,
+                        overflow: TextOverflow.clip,
+                        textScaler: TextScaler.noScaling,
+                        style: const TextStyle(
+                          fontSize: 22,
+                          fontWeight: FontWeight.w800,
+                          color: AppColors.selectionAccent,
+                        ),
+                      ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    name,
+                    style: const TextStyle(
+                      fontSize: 19,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    details,
+                    style: const TextStyle(
+                      color: Color(0xFFD1C9D7),
+                      fontSize: 13,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SyncStatus extends StatelessWidget {
+  const _SyncStatus({required this.state, required this.lastSync});
+
+  final SyncState state;
+  final DateTime? lastSync;
+
+  @override
+  Widget build(BuildContext context) {
+    final local = lastSync?.toLocal();
+    final format = MaterialLocalizations.of(context);
+    final timestamp = local == null
+        ? 'Never synced'
+        : 'Last synced ${format.formatMediumDate(local)} at ${format.formatTimeOfDay(TimeOfDay.fromDateTime(local), alwaysUse24HourFormat: MediaQuery.alwaysUse24HourFormatOf(context))}';
+    final (icon, label, color) = switch (state) {
+      SyncRunning(:final stage) => (
+        Icons.sync_rounded,
+        stage,
+        const Color(0xFFCAD3FF),
+      ),
+      SyncFailure(:final message) => (
+        Icons.error_outline_rounded,
+        'Sync failed: $message',
+        AppColors.error,
+      ),
+      SyncSuccess() => (
+        Icons.check_circle_outline_rounded,
+        'Catalog up to date.',
+        const Color(0xFFACE1C8),
+      ),
+      SyncIdle() => (
+        Icons.schedule_rounded,
+        timestamp,
+        AppColors.textSecondary,
+      ),
+    };
+    return Semantics(
+      liveRegion: true,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: AppColors.controlSurface,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          child: Row(
+            children: [
+              Icon(icon, size: 19, color: color),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(label, style: TextStyle(color: color)),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   bool _signingOut = false;
   bool _removing = false;
+  SettingsGroup _section = SettingsGroup.account;
+  final _scroll = ScrollController();
+  final _contentKey = GlobalKey(debugLabel: 'Settings panels');
+
+  @override
+  void dispose() {
+    _scroll.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     final formFactor = formFactorOf(context, ref);
     final authState = ref.watch(authControllerProvider);
+    final user = authState is Authenticated ? authState.user : null;
+    final sections = <SettingsGroup, Widget>{
+      if (user != null) SettingsGroup.account: _accountSettings(user),
+      SettingsGroup.playlist: _playlistSettings(),
+      if (user != null) SettingsGroup.playback: _playbackSettings(user.id),
+      if (!kTvBuild) SettingsGroup.downloads: _downloadsSettings(formFactor),
+      SettingsGroup.layout: _layoutSettings(),
+      SettingsGroup.about: const AppInfoSection(),
+    };
+    final selected = sections.containsKey(_section)
+        ? _section
+        : SettingsGroup.playlist;
 
     return Align(
       alignment: Alignment.topCenter,
       child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: AppLayout.settingsMaxWidth),
+        constraints: const BoxConstraints(maxWidth: 1280),
         child: ListView(
+          controller: _scroll,
           padding: EdgeInsets.fromLTRB(
             formFactor.gutter,
-            formFactor == FormFactor.mobile ? 24 : kTopNavHeight + 16,
+            formFactor == FormFactor.mobile ? 10 : kTopNavHeight + 18,
             formFactor.gutter,
-            24,
+            32,
           ),
           children: [
-            const Text(
-              'Settings',
-              style: TextStyle(fontSize: 28, fontWeight: FontWeight.w800),
+            Semantics(
+              header: true,
+              child: Text(
+                'Settings',
+                style: TextStyle(
+                  fontSize: formFactor == FormFactor.mobile ? 32 : 44,
+                  height: 1.12,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: -1.25,
+                ),
+              ),
             ),
-            const SizedBox(height: 24),
-            if (authState case Authenticated(:final user)) ...[
-              SettingsSection(
-                label: 'ACCOUNT',
-                children: [
-                  SettingsTile(
-                    icon: Icons.person_outline_rounded,
-                    title: _displayName(user),
-                    subtitle: _accountDetails(user),
-                  ),
-                  const SizedBox(height: 12),
-                  Wrap(
-                    spacing: 12,
-                    runSpacing: 8,
+            const SizedBox(height: 16),
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final wide =
+                    constraints.maxWidth >= 730 &&
+                    MediaQuery.textScalerOf(context).scale(14) <= 20;
+                final navigation = SettingsNavigation(
+                  groups: sections.keys.toList(),
+                  selected: selected,
+                  wide: wide,
+                  onSelect: (section) {
+                    if (section == selected) return;
+                    setState(() => _section = section);
+                    if (_scroll.hasClients) _scroll.jumpTo(0);
+                  },
+                );
+                final content = FocusTraversalGroup(
+                  key: _contentKey,
+                  child: Column(
                     children: [
-                      OutlinedButton.icon(
-                        onPressed: () => showEditProfileDialog(context, user),
-                        icon: const Icon(Icons.edit_outlined, size: 18),
-                        label: const Text('Edit profile'),
-                      ),
-                      OutlinedButton.icon(
-                        onPressed: () async {
-                          final changed = await showChangePasswordDialog(
-                            context,
-                          );
-                          if (changed == true) {
-                            _showAlert(
-                              'Password changed',
-                              'Your password has been updated.',
-                            );
-                          }
-                        },
-                        icon: const Icon(Icons.password_rounded, size: 18),
-                        label: const Text('Change password'),
-                      ),
-                      OutlinedButton.icon(
-                        onPressed: () async {
-                          final label = await showPairTvDialog(context);
-                          if (label != null) {
-                            _showAlert(
-                              'TV paired',
-                              '${label.isEmpty ? 'The TV' : label} is signing '
-                                  'in to your account now.',
-                            );
-                          }
-                        },
-                        icon: const Icon(Icons.tv_rounded, size: 18),
-                        label: const Text('Pair a TV'),
-                      ),
-                      OutlinedButton.icon(
-                        onPressed: _signingOut ? null : _confirmSignOut,
-                        icon: _signingOut
-                            ? const SizedBox(
-                                width: 16,
-                                height: 16,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                ),
-                              )
-                            : const Icon(Icons.logout_rounded, size: 18),
-                        label: Text(_signingOut ? 'Signing out…' : 'Sign out'),
-                      ),
+                      for (final entry in sections.entries)
+                        Visibility(
+                          key: ValueKey(entry.key),
+                          visible: entry.key == selected,
+                          maintainState: true,
+                          child: entry.value,
+                        ),
                     ],
                   ),
-                ],
-              ),
-              const SizedBox(height: 24),
-            ],
-            _buildPlaylistCard(context),
-            const SizedBox(height: 24),
-            if (!kTvBuild) ...[
-              SettingsSection(
-                label: 'DOWNLOADS',
-                children: [
-                  const SettingsTile(
-                    icon: Icons.download_rounded,
-                    title: 'Downloads',
-                    subtitle:
-                        'Videos saved on this device for offline '
-                        'playback.',
-                  ),
-                  const SizedBox(height: 12),
-                  OutlinedButton.icon(
-                    onPressed: () => context.go('/downloads'),
-                    icon: const Icon(Icons.folder_open_rounded, size: 18),
-                    label: const Text('Manage downloads'),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 24),
-            ],
-            const AppInfoSection(),
-            const SizedBox(height: 24),
-            _buildLayoutCard(),
+                );
+                return wide
+                    ? Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          SizedBox(
+                            width: constraints.maxWidth >= 980 ? 254 : 212,
+                            child: navigation,
+                          ),
+                          const SizedBox(width: 18),
+                          Expanded(child: content),
+                        ],
+                      )
+                    : Column(
+                        children: [
+                          navigation,
+                          const SizedBox(height: 14),
+                          content,
+                        ],
+                      );
+              },
+            ),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildPlaylistCard(BuildContext context) {
-    final source = ref.watch(activeSourceProvider).value;
+  Widget _accountSettings(BackendUser user) => SettingsSection(
+    label: 'Account',
+    children: [
+      _AccountIdentity(
+        name: _displayName(user),
+        details: _accountDetails(user),
+      ),
+      const SizedBox(height: 12),
+      SettingsAction(
+        icon: Icons.edit_outlined,
+        title: 'Edit profile',
+        onPressed: () => showEditProfileDialog(context, user),
+      ),
+      SettingsAction(
+        icon: Icons.password_rounded,
+        title: 'Change password',
+        onPressed: () async {
+          final changed = await showChangePasswordDialog(context);
+          if (changed == true) {
+            _showAlert('Password changed', 'Your password has been updated.');
+          }
+        },
+      ),
+      SettingsAction(
+        icon: Icons.tv_rounded,
+        title: 'Pair a TV',
+        onPressed: () async {
+          final label = await showPairTvDialog(context);
+          if (label != null) {
+            _showAlert(
+              'TV paired',
+              '${label.isEmpty ? 'The TV' : label} is signing '
+                  'in to your account now.',
+            );
+          }
+        },
+      ),
+      const SizedBox(height: 12),
+      SettingsAction(
+        icon: Icons.logout_rounded,
+        title: _signingOut ? 'Signing out…' : 'Sign out',
+        busy: _signingOut,
+        destructive: true,
+        onPressed: _signingOut ? null : _confirmSignOut,
+      ),
+    ],
+  );
+
+  Widget _playbackSettings(String viewerId) {
+    final preference = autoplayPreferenceProvider(viewerId);
+    final saved = ref.watch(preference);
+    return SettingsSection(
+      label: 'Playback',
+      children: [
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          secondary: const Icon(Icons.skip_next_rounded),
+          title: const Text('Autoplay next episode'),
+          subtitle: const Text(
+            'Show a three-second countdown as the current episode ends.',
+          ),
+          value: saved.value ?? false,
+          onChanged: saved.hasValue && !saved.isLoading
+              ? (enabled) async {
+                  try {
+                    await ref.read(preference.notifier).save(enabled);
+                  } catch (_) {
+                    if (mounted) {
+                      _showAlert(
+                        'Autoplay',
+                        'Could not save this setting. Please try again.',
+                      );
+                    }
+                  }
+                }
+              : null,
+        ),
+        if (saved.hasError)
+          TextButton(
+            onPressed: () => ref.invalidate(preference),
+            child: const Text('Retry loading autoplay setting'),
+          ),
+      ],
+    );
+  }
+
+  Widget _playlistSettings() {
+    final active = ref.watch(activeSourceProvider);
+    final source = active.value;
     final syncState = ref.watch(syncControllerProvider);
-    final busy = syncState is SyncRunning || _removing;
+    final syncing = syncState is SyncRunning;
+    final busy = syncing || _removing;
 
     return SettingsSection(
-      label: 'PLAYLIST',
+      label: 'Playlist',
       children: [
-        if (source == null)
+        if (source == null && active.isLoading)
+          const SettingsTile(
+            icon: Icons.playlist_play_rounded,
+            title: 'Loading playlist…',
+          )
+        else if (source == null && active.hasError)
+          SettingsAction(
+            icon: Icons.refresh_rounded,
+            title: 'Retry loading playlist',
+            onPressed: () => ref.invalidate(activeSourceProvider),
+          )
+        else if (source == null) ...[
           const SettingsTile(
             icon: Icons.playlist_remove_rounded,
             title: 'No playlist configured',
             subtitle: 'Connect a playlist to start watching.',
-          )
-        else ...[
+          ),
+          const SizedBox(height: 12),
+          SettingsAction(
+            icon: Icons.playlist_add_rounded,
+            title: 'Connect a playlist',
+            onPressed: () => context.push('/setup'),
+          ),
+        ] else ...[
           SettingsTile(
             icon: Icons.dns_rounded,
             title: source.name,
-            subtitle: source.lastSyncAt == null
-                ? '${sourceOrigin(source.serverUrl)} — never synced'
-                : '${sourceOrigin(source.serverUrl)} — last synced '
-                      '${_formatWhen(source.lastSyncAt!)}',
+            subtitle: sourceOrigin(source.serverUrl),
           ),
           const SizedBox(height: 12),
-          Wrap(
-            spacing: 12,
-            runSpacing: 8,
-            children: [
-              OutlinedButton.icon(
-                onPressed: () => showIptvInfoDialog(context, source),
-                icon: const Icon(Icons.info_outline_rounded, size: 18),
-                label: const Text('IPTV information'),
-              ),
-              FilledButton.icon(
-                onPressed: busy
-                    ? null
-                    : () => ref
-                          .read(syncControllerProvider.notifier)
-                          .syncSource(source),
-                style: FilledButton.styleFrom(
-                  // Compact, matching the outlined buttons beside it.
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 8,
-                  ),
-                  backgroundColor: AppColors.primary,
-                ),
-                icon: const Icon(Icons.sync_rounded, size: 18),
-                label: const Text('Sync now'),
-              ),
-              ...[
-                OutlinedButton.icon(
-                  onPressed: busy ? null : () => context.push('/setup'),
-                  icon: const Icon(Icons.swap_horiz_rounded, size: 18),
-                  label: const Text('Change'),
-                ),
-                OutlinedButton.icon(
-                  onPressed: busy ? null : () => _confirmRemove(source),
-                  icon: _removing
-                      ? const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.delete_outline_rounded, size: 18),
-                  label: const Text('Remove'),
-                ),
-              ],
-            ],
+          _SyncStatus(state: syncState, lastSync: source.lastSyncAt),
+          const SizedBox(height: 12),
+          SettingsAction(
+            icon: Icons.sync_rounded,
+            title: syncing ? 'Syncing playlist…' : 'Sync now',
+            busy: syncing,
+            onPressed: busy
+                ? null
+                : () => ref
+                      .read(syncControllerProvider.notifier)
+                      .syncSource(source),
           ),
-          switch (syncState) {
-            SyncRunning(:final stage) => Padding(
-              padding: const EdgeInsets.only(top: 12),
-              child: Row(
-                children: [
-                  const SizedBox(
-                    width: 14,
-                    height: 14,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  ),
-                  const SizedBox(width: 10),
-                  Flexible(
-                    child: Text(
-                      stage,
-                      style: const TextStyle(color: AppColors.textSecondary),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            SyncFailure(:final message) => Padding(
-              padding: const EdgeInsets.only(top: 12),
-              child: Text(
-                'Sync failed: $message',
-                style: const TextStyle(color: AppColors.error),
-              ),
-            ),
-            SyncSuccess() => const Padding(
-              padding: EdgeInsets.only(top: 12),
-              child: Text(
-                'Catalog up to date.',
-                style: TextStyle(color: AppColors.textSecondary),
-              ),
-            ),
-            SyncIdle() => const SizedBox.shrink(),
-          },
+          SettingsAction(
+            icon: Icons.info_outline_rounded,
+            title: 'IPTV information',
+            onPressed: () => showIptvInfoDialog(context, source),
+          ),
+          SettingsAction(
+            icon: Icons.swap_horiz_rounded,
+            title: 'Change playlist',
+            onPressed: busy ? null : () => context.push('/setup'),
+          ),
+          const SizedBox(height: 12),
+          SettingsAction(
+            icon: Icons.delete_outline_rounded,
+            title: _removing ? 'Removing playlist…' : 'Remove playlist',
+            destructive: true,
+            busy: _removing,
+            onPressed: busy ? null : () => _confirmRemove(source),
+          ),
         ],
       ],
     );
   }
 
-  Widget _buildLayoutCard() {
+  Widget _downloadsSettings(FormFactor form) => SettingsSection(
+    label: 'Downloads',
+    children: [
+      SettingsAction(
+        icon: Icons.folder_open_rounded,
+        title: 'Manage downloads',
+        subtitle: 'Videos saved on this device for offline playback.',
+        onPressed: () => context.go('/downloads'),
+      ),
+      if (supportsMobileDownloads && !form.isTv)
+        const DownloadNetworkSetting(
+          contentPadding: EdgeInsets.symmetric(horizontal: 12),
+          icon: Icons.wifi_rounded,
+        ),
+    ],
+  );
+
+  Widget _layoutSettings() {
     final override = ref.watch(formFactorOverrideProvider);
     return SettingsSection(
-      label: 'LAYOUT MODE',
+      label: 'Layout mode',
       children: [
-        // Plain tiles instead of RadioGroup: its roving arrow-key selection
-        // would switch the layout mode while a D-pad user merely scrolls past.
-        for (final (label, value) in <(String, FormFactor?)>[
-          ('Auto-detect', null),
-          for (final ff in FormFactor.values) (ff.name.toUpperCase(), ff),
+        for (final (label, icon, value) in <(String, IconData, FormFactor?)>[
+          ('Auto-detect', Icons.auto_awesome_outlined, null),
+          ('Phone', Icons.smartphone_rounded, FormFactor.mobile),
+          ('Tablet', Icons.tablet_mac_rounded, FormFactor.tablet),
+          ('Desktop', Icons.desktop_windows_outlined, FormFactor.desktop),
+          ('TV', Icons.tv_rounded, FormFactor.tv),
         ])
-          ListTile(
-            contentPadding: EdgeInsets.zero,
-            dense: true,
-            leading: Icon(
-              override == value
-                  ? Icons.radio_button_checked_rounded
-                  : Icons.radio_button_off_rounded,
-              color: override == value
-                  ? AppColors.primary
-                  : AppColors.textSecondary,
-            ),
-            title: Text(label),
-            onTap: () =>
+          SettingsAction(
+            icon: icon,
+            title: label,
+            subtitle: value == null
+                ? 'Adapts to this device and screen size.'
+                : null,
+            selected: override == value,
+            onPressed: () =>
                 ref.read(formFactorOverrideProvider.notifier).set(value),
           ),
       ],
@@ -304,13 +495,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     'Signed in on this device',
   ].join('\n');
 
-  static String _formatWhen(DateTime time) {
-    final local = time.toLocal();
-    String two(int n) => n.toString().padLeft(2, '0');
-    return '${local.year}-${two(local.month)}-${two(local.day)} '
-        '${two(local.hour)}:${two(local.minute)}';
-  }
-
   Future<void> _confirmSignOut() async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -328,6 +512,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         ),
         actions: [
           TextButton(
+            autofocus: true,
             onPressed: () => Navigator.pop(context, false),
             child: const Text('Cancel'),
           ),
@@ -339,7 +524,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         ],
       ),
     );
-    if (confirmed != true || !mounted) return;
+    if (confirmed != true || !mounted || _signingOut) return;
     setState(() => _signingOut = true);
     try {
       await ref.read(authControllerProvider.notifier).logout();
@@ -366,6 +551,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         ),
         actions: [
           TextButton(
+            autofocus: true,
             onPressed: () => Navigator.pop(context, false),
             child: const Text('Cancel'),
           ),
@@ -377,7 +563,13 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         ],
       ),
     );
-    if (confirmed != true || !mounted) return;
+    if (confirmed != true ||
+        !mounted ||
+        _removing ||
+        ref.read(activeSourceProvider).value?.id != source.id ||
+        ref.read(syncControllerProvider) is SyncRunning) {
+      return;
+    }
     setState(() => _removing = true);
     try {
       // Remove from the account vault first — otherwise the next provision

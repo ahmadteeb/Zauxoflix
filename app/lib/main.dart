@@ -1,13 +1,18 @@
 import 'dart:async';
+import 'dart:io';
+import 'features/player/episode_buffer.dart';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_secure_storage_webos/flutter_secure_storage_webos.dart';
 import 'package:fvp/fvp.dart' as fvp;
 import 'package:window_manager/window_manager.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'core/input/input_modality.dart';
+import 'core/tv/tv_back_button.dart';
 import 'core/app_platform.dart';
 import 'core/responsive/form_factor.dart';
 import 'core/router/app_router.dart';
@@ -17,12 +22,23 @@ import 'data/backend/backend_providers.dart';
 import 'data/backend/device_identity.dart';
 import 'data/backend/key_value_store.dart';
 import 'data/backend/secure_session_storage.dart';
+import 'data/db/app_database.dart';
+import 'features/player/webos_video_player.dart';
 import 'features/remote/remote_playback.dart';
 
 String _startupStage = 'configuration';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  LicenseRegistry.addLicense(() async* {
+    yield LicenseEntryWithLineBreaks(const [
+      'DM Sans',
+    ], await rootBundle.loadString('assets/fonts/OFL-DM-Sans.txt'));
+    yield LicenseEntryWithLineBreaks(
+      const ['IBM Plex Sans Arabic'],
+      await rootBundle.loadString('assets/fonts/OFL-IBM-Plex-Sans-Arabic.txt'),
+    );
+  });
   runApp(_startupScreen());
   try {
     final app = await _initializeApplication().timeout(
@@ -73,6 +89,9 @@ Future<Widget> _initializeApplication() async {
     );
   }
   _startupStage = 'secure session storage';
+  // Select the LG adapter before Supabase reads its persisted session. The
+  // default adapter uses a different method channel from the webOS runner.
+  if (isWebOsPlatform) FlutterSecureStorageWebos.registerWith();
   final store = SecureKeyValueStore();
   await Supabase.initialize(
     url: url,
@@ -99,10 +118,19 @@ Future<Widget> _initializeApplication() async {
   InputModality.attach();
   // Use libmdk for IPTV containers that AVPlayer cannot reliably open.
   // TV runtimes must retain their platform-specific player implementations.
-  if (isFvpPlatform) {
+  if (isWebOsPlatform) {
+    WebOsVideoPlayer.registerWith();
+    configureWebOsSqlite();
+  } else if (isFvpPlatform) {
     fvp.registerWith(
       options: {
         'platforms': ['linux', 'windows', 'macos', 'ios', 'android'],
+        // Keep a short in-place HTTP reconnect to preserve buffered playback.
+        'player': <String, String>{
+          'avio.reconnect_delay_max': '2',
+          'avio.reconnect_max_retries': '1',
+          'avio.reconnect_delay_total_max': '3',
+        },
       },
     );
   }
@@ -113,9 +141,13 @@ Future<Widget> _initializeApplication() async {
   await store.delete('auth.accessToken');
   await store.delete('auth.refreshToken');
   final device = await loadOrCreateDeviceIdentity(store);
+  if (isWebOsPlatform) debugPrint('[Startup] webOS secure storage ready');
 
   return ProviderScope(
     overrides: [
+      episodeBufferEnabledProvider.overrideWithValue(
+        isFvpPlatform && !Platform.isMacOS,
+      ),
       keyValueStoreProvider.overrideWithValue(store),
       deviceIdentityProvider.overrideWithValue(device),
     ],
@@ -129,6 +161,7 @@ class ZauxoflixApp extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final router = ref.watch(appRouterProvider);
+    final tvBack = kTvBuild ? ref.watch(tvBackDispatcherProvider) : null;
     // Instantiates the listener for playback commands relayed from the
     // account's other devices; without this watch nothing subscribes.
     ref.watch(remotePlaybackProvider);
@@ -136,7 +169,20 @@ class ZauxoflixApp extends ConsumerWidget {
       title: 'Zauxoflix',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.dark,
-      routerConfig: router,
+      onNavigationNotification: kTvBuild && Platform.isAndroid
+          ? (_) {
+              SystemNavigator.setFrameworkHandlesBack(true);
+              return true;
+            }
+          : null,
+      routerConfig: tvBack == null
+          ? router
+          : RouterConfig(
+              routeInformationProvider: router.routeInformationProvider,
+              routeInformationParser: router.routeInformationParser,
+              routerDelegate: router.routerDelegate,
+              backButtonDispatcher: tvBack,
+            ),
       builder: (context, child) => Listener(
         // Any pointer interaction switches autofocus behavior back to
         // pointer-first; see InputModality.
@@ -155,15 +201,37 @@ class ZauxoflixApp extends ConsumerWidget {
             }
           },
           child: Shortcuts(
-            shortcuts: const {
-              SingleActivator(LogicalKeyboardKey.escape): _PopIntent(),
-              SingleActivator(LogicalKeyboardKey.goBack): _PopIntent(),
+            shortcuts: {
+              if (tvBack?.confirmExitAtHome == true)
+                const SingleActivator(lgRemoteBackKey, includeRepeats: false):
+                    const NavigateBackIntent(),
+              if (kTvBuild)
+                const SingleActivator(
+                  LogicalKeyboardKey.colorF0Red,
+                  includeRepeats: false,
+                ): const NavigateBackIntent(),
+              const SingleActivator(
+                LogicalKeyboardKey.escape,
+                includeRepeats: false,
+              ): const NavigateBackIntent(),
+              const SingleActivator(
+                LogicalKeyboardKey.goBack,
+                includeRepeats: false,
+              ): const NavigateBackIntent(),
+              const SingleActivator(
+                LogicalKeyboardKey.browserBack,
+                includeRepeats: false,
+              ): const NavigateBackIntent(),
             },
             child: Actions(
               actions: {
-                _PopIntent: CallbackAction<_PopIntent>(
+                NavigateBackIntent: CallbackAction<NavigateBackIntent>(
                   onInvoke: (_) {
-                    if (router.canPop()) router.pop();
+                    if (tvBack != null) {
+                      unawaited(tvBack.didPopRoute());
+                    } else if (router.canPop()) {
+                      router.pop();
+                    }
                     return null;
                   },
                 ),
@@ -175,8 +243,4 @@ class ZauxoflixApp extends ConsumerWidget {
       ),
     );
   }
-}
-
-class _PopIntent extends Intent {
-  const _PopIntent();
 }

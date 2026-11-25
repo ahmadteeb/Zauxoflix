@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="strict-origin-when-cross-origin">
+  <title>Trailer</title>
+  <style>
+    * { box-sizing: border-box }
+    html, body, #player { width: 100%; height: 100%; margin: 0; border: 0 }
+    body { background: #000; color: #fff; font: 500 18px system-ui, sans-serif }
+    #status { position: absolute; inset: 0; align-content: center; text-align: center; padding: 24px; background: #101015 }
+    #status[hidden] { display: none }
+    button { font: inherit; padding: .65em 1.5em; border: 0; border-radius: 2em; cursor: pointer }
+    button:focus-visible { outline: 3px solid white; outline-offset: 5px }
+  </style>
+</head>
+<body>
+  <div id="player"></div>
+  <section id="status" aria-live="polite"><p>Loading trailer…</p><button hidden>Retry</button></section>
+  <script>
+    const video = new URLSearchParams(location.hash.slice(1)).get('v') || 'VIDEO_ID_PLACEHOLDER';
+    const statusPanel = document.querySelector('#status');
+    const message = statusPanel.querySelector('p');
+    const retry = statusPanel.querySelector('button');
+    let player, deadline;
+    function notify(state) {
+      if (window.parent !== window) window.parent.postMessage({trailerState: state}, '*');
+      if (window.flutter_inappwebview) window.flutter_inappwebview.callHandler('trailerState', state);
+    }
+    function showError(text) {
+      clearTimeout(deadline);
+      statusPanel.hidden = false;
+      message.textContent = text;
+      retry.hidden = false;
+      notify('error');
+    }
+    function start() {
+      if (!/^[A-Za-z0-9_-]{11}$/.test(video)) {
+        showError('This trailer link is unavailable.');
+        return;
+      }
+      if (player) player.destroy();
+      message.textContent = 'Loading trailer…';
+      retry.hidden = true;
+      statusPanel.hidden = false;
+      clearTimeout(deadline);
+      deadline = setTimeout(() => showError('YouTube could not load. Check your connection and retry.'), 20000);
+      if (!window.YT || !window.YT.Player) {
+        const script = document.createElement('script');
+        script.src = 'https://www.youtube.com/iframe_api';
+        script.onerror = () => showError('YouTube could not load. Check your connection and retry.');
+        document.head.appendChild(script);
+        return;
+      }
+      createPlayer();
+    }
+    function createPlayer() {
+      if (!document.querySelector('#player')) {
+        const slot = document.createElement('div');
+        slot.id = 'player';
+        document.body.prepend(slot);
+      }
+      // Create the iframe explicitly so it receives autoplay permission and
+      // the browser's genuine origin referrer on its first request.
+      const iframe = document.createElement('iframe');
+      iframe.id = 'player';
+      iframe.title = 'YouTube trailer';
+      iframe.allow = 'autoplay; encrypted-media; picture-in-picture; fullscreen';
+      iframe.allowFullscreen = true;
+      iframe.referrerPolicy = 'strict-origin-when-cross-origin';
+      const params = new URLSearchParams({enablejsapi: '1', autoplay: '1', controls: '1', playsinline: '1',
+        origin: location.origin, widget_referrer: window.parent !== window
+          ? 'https://com.flutter.app.zauxoflix.trailer' : 'https://com.zauxoflix.zauxoflix'});
+      iframe.src = 'https://www.youtube.com/embed/' + video + '?' + params;
+      document.querySelector('#player').replaceWith(iframe);
+      player = new YT.Player(iframe, {events: {
+        onReady() {
+          clearTimeout(deadline);
+          statusPanel.hidden = true;
+          notify('ready');
+          player.playVideo();
+        },
+        onStateChange(e) {
+          if (e.data === 1) notify('playing');
+          if (e.data === 2 || e.data === 0) notify('paused');
+        },
+        onError(e) {
+          const text = e.data === 101 || e.data === 150 ? 'The publisher only allows this trailer on YouTube.'
+            : e.data === 100 ? 'This trailer was removed or made private.'
+            : 'YouTube could not play this trailer here.';
+          showError(text);
+        }
+      }});
+    }
+    function toggleTrailer() {
+      if (!retry.hidden) return start();
+      if (!player || !player.getPlayerState) return;
+      if (player.getPlayerState() === 1) player.pauseVideo();
+      else player.playVideo();
+    }
+    window.toggleTrailer = toggleTrailer;
+    window.onYouTubeIframeAPIReady = createPlayer;
+    window.addEventListener('message', event => {
+      if (event.source === window.parent && event.data === 'toggleTrailer') toggleTrailer();
+    });
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden && player && player.pauseVideo) player.pauseVideo();
+    });
+    retry.onclick = start;
+    start();
+  </script>
+</body>
+</html>

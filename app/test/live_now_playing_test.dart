@@ -81,6 +81,9 @@ void main() {
     await settle();
     expect(find.byType(LiveTvScreen), findsOneWidget);
     expect(spy.added, greaterThanOrEqualTo(1));
+    await tester.tap(find.text('Sports'));
+    await settle();
+    expect(find.text('Search sports channels'), findsOneWidget);
     final disposedWhileVisible = spy.disposed;
 
     // Switch away: the branch stays mounted (IndexedStack) but TickerMode is

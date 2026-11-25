@@ -1,16 +1,18 @@
 name: zauxoflix
 description: "Zauxoflix — IPTV client for mobile, desktop and Android TV. Streams a provisioned Xtream or M3U source with offline downloads, cross-device sync and remote playback control."
 publish_to: 'none'
-version: 0.1.0
+version: 1.1.0+28
 
 environment:
   sdk: ^3.10.4
 
 dependencies:
+  background_downloader: 9.5.9
   cached_network_image: ^3.4.1
   dio: ^5.10.0
   drift: ^2.31.0
   drift_flutter: ^0.2.0
+  ffi: ^2.1.4
   flutter:
     sdk: flutter
   flutter_riverpod: ^3.3.2
@@ -25,7 +27,9 @@ dependencies:
   path_provider: ^2.1.6
   supabase_flutter: ^2.18.3
   shared_preferences: ^2.5.5
+  sqlite3: ^2.9.4
   video_player: ^2.11.1
+  video_player_platform_interface: ^6.9.0
   wakelock_plus: ^1.6.1
   window_manager: ^0.5.2
   xml: ^6.5.0
@@ -39,6 +43,30 @@ dependencies:
   path_provider_tizen: ^2.3.3
   flutter_secure_storage_tizen: ^0.1.6
   sqflite_tizen: 0.1.5
+  # LG's federated implementations are registered only by flutter-webos.
+  flutter_secure_storage_webos:
+    git:
+      url: https://github.com/lg-flutter-webos/plugins.git
+      ref: 3a742bb86b04e261044f0864f9b1f71acf0bbad3
+      path: packages/flutter_secure_storage
+  path_provider_webos:
+    git:
+      url: https://github.com/lg-flutter-webos/plugins.git
+      ref: 3a742bb86b04e261044f0864f9b1f71acf0bbad3
+      path: packages/path_provider
+  shared_preferences_webos:
+    git:
+      url: https://github.com/lg-flutter-webos/plugins.git
+      ref: 3a742bb86b04e261044f0864f9b1f71acf0bbad3
+      path: packages/shared_preferences
+  url_launcher_webos:
+    git:
+      url: https://github.com/lg-flutter-webos/plugins.git
+      ref: 3a742bb86b04e261044f0864f9b1f71acf0bbad3
+      path: packages/url_launcher
+  video_player_webos:
+    path: ../third_party/video_player_webos
+  flutter_inappwebview: 6.1.5
 
 dev_dependencies:
   http: ^1.6.0
@@ -53,13 +81,42 @@ dev_dependencies:
 # path_provider platform packages >=2.3 (Android) / >=2.5 (Darwin) use native
 # build hooks (jni/objective_c), which this SDK's build_runner cannot compile.
 dependency_overrides:
+  # LG's plugin still declares ^1.1.0. Its read/write API also works with 2.x.
+  flutter_secure_storage_platform_interface: ^2.1.1
   path_provider_android: 2.2.17
   path_provider_foundation: 2.4.1
 
 flutter:
   uses-material-design: true
   assets:
+    - assets/trailer/player.html
     - assets/images/
+    - assets/private_imdb/
+    - assets/fonts/OFL-DM-Sans.txt
+    - assets/fonts/OFL-IBM-Plex-Sans-Arabic.txt
+  fonts:
+    - family: DM Sans
+      fonts:
+        - asset: assets/fonts/DMSans-Regular.ttf
+          weight: 400
+        - asset: assets/fonts/DMSans-Medium.ttf
+          weight: 500
+        - asset: assets/fonts/DMSans-SemiBold.ttf
+          weight: 600
+        - asset: assets/fonts/DMSans-Bold.ttf
+          weight: 700
+        - asset: assets/fonts/DMSans-ExtraBold.ttf
+          weight: 800
+    - family: IBM Plex Sans Arabic
+      fonts:
+        - asset: assets/fonts/IBMPlexSansArabic-Regular.ttf
+          weight: 400
+        - asset: assets/fonts/IBMPlexSansArabic-Medium.ttf
+          weight: 500
+        - asset: assets/fonts/IBMPlexSansArabic-SemiBold.ttf
+          weight: 600
+        - asset: assets/fonts/IBMPlexSansArabic-Bold.ttf
+          weight: 700
 
 icons_launcher:
   image_path: "assets/icons/icon.png"

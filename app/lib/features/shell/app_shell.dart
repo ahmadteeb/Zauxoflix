@@ -4,8 +4,12 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/responsive/form_factor.dart';
 import '../../core/theme/app_theme.dart';
+import '../downloads/download_nav_icon.dart';
 import '../remote/cast_button.dart';
+import '../home/widgets/home_remote_navigation.dart';
 import 'destinations.dart';
+import 'mobile_nav_bar.dart';
+import 'navigation_glass.dart';
 import 'top_nav_bar.dart';
 
 class AppShell extends ConsumerWidget {
@@ -23,78 +27,140 @@ class AppShell extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final formFactor = formFactorOf(context, ref);
-    final mobileDestinations = [
-      ...appDestinations.take(4),
-      appDestinations.last,
-    ];
-    final mobileIndex = mobileDestinations.indexWhere(
-      (d) => d.path == appDestinations[navigationShell.currentIndex].path,
-    );
+    final selected = appDestinations[navigationShell.currentIndex].path;
+    final home = selected == '/home';
 
     return switch (formFactor) {
       FormFactor.mobile => Scaffold(
+        extendBody: home,
         body: SafeArea(
+          top: !home,
           bottom: false,
-          child: Column(
+          child: Stack(
             children: [
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: Row(
-                  children: [
-                    const Icon(
-                      Icons.play_circle_fill,
-                      color: AppColors.primary,
-                      size: 24,
-                    ),
-                    const SizedBox(width: 8),
-                    const Expanded(
-                      child: Text(
-                        'ZAUXOFLIX',
-                        style: TextStyle(
-                          fontWeight: FontWeight.w800,
-                          letterSpacing: 2,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                    IconButton(
-                      tooltip: 'Search',
-                      onPressed: () => context.go('/search'),
-                      icon: const Icon(Icons.search_rounded),
-                    ),
-                    IconButton(
-                      tooltip: 'Downloads',
-                      onPressed: () => context.go('/downloads'),
-                      icon: const Icon(Icons.download_rounded),
-                    ),
-                    const CastButton(),
-                  ],
-                ),
-              ),
-              Expanded(
+              Positioned.fill(
+                top: home ? 0 : _MobileHeader.height,
                 child: _BranchFade(
                   index: navigationShell.currentIndex,
                   child: navigationShell,
                 ),
               ),
+              Positioned(
+                top: 0,
+                left: 0,
+                right: 0,
+                child: _MobileHeader(selected: selected, glass: home),
+              ),
             ],
           ),
         ),
-        bottomNavigationBar: NavigationBar(
-          selectedIndex: mobileIndex < 0 ? 0 : mobileIndex,
-          labelBehavior: NavigationDestinationLabelBehavior.onlyShowSelected,
-          onDestinationSelected: (index) =>
-              _goBranch(appDestinations.indexOf(mobileDestinations[index])),
-          destinations: [
-            for (final d in mobileDestinations)
-              NavigationDestination(icon: Icon(d.icon), label: d.label),
-          ],
+        bottomNavigationBar: MobileNavBar(
+          selectedIndex: navigationShell.currentIndex,
+          onSelect: _goBranch,
+          glass: home,
         ),
       ),
-      // Tablet, desktop and TV share the Netflix-style top nav layout.
+      // Tablet, desktop and TV share the wide navigation layout.
       _ => _TopNavShell(navigationShell: navigationShell, onSelect: _goBranch),
     };
+  }
+}
+
+class _MobileHeader extends StatelessWidget {
+  const _MobileHeader({required this.selected, required this.glass});
+
+  static const height = 48.0;
+
+  final String selected;
+  final bool glass;
+
+  @override
+  Widget build(BuildContext context) {
+    final utilities = Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        IconButton(
+          tooltip: 'Search',
+          onPressed: () => context.go('/search'),
+          isSelected: selected == '/search',
+          selectedIcon: const Icon(
+            Icons.search_rounded,
+            color: AppColors.selectionAccent,
+          ),
+          icon: const Icon(Icons.search_rounded),
+        ),
+        IconButton(
+          tooltip: 'Downloads',
+          onPressed: () => context.go('/downloads'),
+          isSelected: selected == '/downloads',
+          selectedIcon: const IconTheme(
+            data: IconThemeData(color: AppColors.selectionAccent),
+            child: DownloadNavIcon(),
+          ),
+          icon: const DownloadNavIcon(),
+        ),
+        const CastButton(),
+      ],
+    );
+    return Stack(
+      children: [
+        if (glass)
+          const Positioned.fill(
+            child: IgnorePointer(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      Color(0xDC0B0B0F),
+                      Color(0xAB0B0B0F),
+                      Colors.transparent,
+                    ],
+                    stops: [0, .65, 1],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        Padding(
+          padding: EdgeInsets.fromLTRB(
+            16,
+            glass ? MediaQuery.paddingOf(context).top + 6 : 0,
+            16,
+            glass ? 10 : 0,
+          ),
+          child: SizedBox(
+            height: height,
+            child: Row(
+              children: [
+                const Icon(
+                  Icons.play_circle_fill,
+                  color: AppColors.primary,
+                  size: 24,
+                ),
+                const SizedBox(width: 8),
+                const Expanded(
+                  child: Text(
+                    'ZAUXOFLIX',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 2,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                if (glass)
+                  NavigationGlass(radius: 17, child: utilities)
+                else
+                  utilities,
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
   }
 }
 
@@ -135,6 +201,13 @@ class _TopNavShellState extends State<_TopNavShell> {
             Positioned.fill(
               child: Actions(
                 actions: {
+                  FocusTopBarIntent: CallbackAction<FocusTopBarIntent>(
+                    onInvoke: (_) {
+                      _navItemNodes[widget.navigationShell.currentIndex]
+                          .requestFocus();
+                      return null;
+                    },
+                  ),
                   DirectionalFocusIntent: _ContentEdgeDirectionalAction(
                     () => _navItemNodes[widget.navigationShell.currentIndex],
                   ),
@@ -160,6 +233,7 @@ class _TopNavShellState extends State<_TopNavShell> {
                 actions: {
                   DirectionalFocusIntent: _NavBarDirectionalAction(
                     _contentScope,
+                    home: widget.navigationShell.currentIndex == 0 && kTvBuild,
                   ),
                 },
                 child: FocusScope(
@@ -228,13 +302,16 @@ class _BranchFadeState extends State<_BranchFade>
 /// the content (restoring its last focused item), other directions traverse
 /// within the bar's scope.
 class _NavBarDirectionalAction extends Action<DirectionalFocusIntent> {
-  _NavBarDirectionalAction(this.contentScope);
+  _NavBarDirectionalAction(this.contentScope, {required this.home});
+
+  final bool home;
 
   final FocusScopeNode contentScope;
 
   @override
   Object? invoke(DirectionalFocusIntent intent) {
     if (intent.direction == TraversalDirection.down) {
+      if (home && HomeRemoteNavigation.enterFromTop(contentScope)) return null;
       contentScope.requestFocus();
       // Nothing to restore (first visit, or the branch changed and the old
       // focus sits in a now focus-excluded branch) — walk into the topmost

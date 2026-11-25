@@ -14,6 +14,8 @@ class AppImage extends StatelessWidget {
     this.width,
     this.height,
     this.fit = BoxFit.cover,
+    this.alignment = Alignment.center,
+    this.placeholder,
     this.memCacheWidth,
     this.errorWidget,
     this.placeholderIconSize = 28,
@@ -23,6 +25,8 @@ class AppImage extends StatelessWidget {
   final double? width;
   final double? height;
   final BoxFit fit;
+  final Alignment alignment;
+  final Widget? placeholder;
   final int? memCacheWidth;
   final Widget? errorWidget;
   final double placeholderIconSize;
@@ -34,13 +38,16 @@ class AppImage extends StatelessWidget {
       width: width,
       height: height,
       fit: fit,
+      alignment: alignment,
       memCacheWidth: memCacheWidth,
       fadeInDuration: const Duration(milliseconds: 180),
       fadeOutDuration: const Duration(milliseconds: 120),
       filterQuality: FilterQuality.low,
-      placeholder: (_, _) => SkeletonPulse(
-        child: SkeletonBox(width: width, height: height, radius: 0),
-      ),
+      placeholder: (_, _) =>
+          placeholder ??
+          SkeletonPulse(
+            child: SkeletonBox(width: width, height: height, radius: 0),
+          ),
       errorWidget: (_, _, _) =>
           errorWidget ??
           ColoredBox(
