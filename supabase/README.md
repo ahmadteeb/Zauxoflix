@@ -64,17 +64,24 @@ Requests are throttled by gateway address, claims additionally by verified accou
 
 Zauxoflix 1.1.0 uses the same four Postgres migrations as 1.0.2. If your fork's Supabase project already has all four versions through `20261114030000`, the migration plan should be empty. Earlier installations and new projects apply the missing files in order. Keep the existing migration versions in place.
 
-Use the [Supabase CLI v3](https://supabase.com/docs/reference/cli/introduction) and Python 3 from the repository root. The script targets the project reference you provide, lists its applied migrations, and previews the pending SQL.
+Use the [Supabase CLI v3](https://supabase.com/docs/reference/cli/introduction) from the repository root. `YOUR_PROJECT_REF` is the 20-character project reference. List the applied migrations and preview the pending SQL first.
 
 ```bash
 supabase login
-python supabase/scripts/update_database.py YOUR_PROJECT_REF
+supabase migration list --remote=YOUR_PROJECT_REF
+supabase db push --remote=YOUR_PROJECT_REF --dry-run
 ```
 
-After reviewing the plan, apply the pending migrations with `--apply`. For a fresh project or when updating the Edge Function, add `--deploy-pairing`. The script deploys the function after migrations succeed.
+After reviewing the plan, apply the pending migrations.
 
 ```bash
-python supabase/scripts/update_database.py YOUR_PROJECT_REF --apply --deploy-pairing
+supabase db push --remote=YOUR_PROJECT_REF
+```
+
+For a fresh project or when updating the Edge Function, deploy it after the migrations succeed.
+
+```bash
+supabase functions deploy tv-pairing --remote=YOUR_PROJECT_REF --no-verify-jwt
 ```
 
 The gateway JWT check stays disabled for this function because start/poll run before login. The claim path verifies the bearer JWT itself. Never expose the service key in Flutter or expose `app_data` / `private` in the Data API.

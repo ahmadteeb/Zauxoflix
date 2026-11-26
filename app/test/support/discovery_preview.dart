@@ -1,23 +1,13 @@
 import 'dart:math' as math;
-import 'dart:io';
 import 'dart:ui' as ui;
 import 'package:drift/drift.dart' show Value;
-import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:fvp/fvp.dart' as fvp;
-import 'package:window_manager/window_manager.dart';
-import 'package:zauxoflix/core/input/input_modality.dart';
 import 'package:zauxoflix/data/backend/auth_models.dart';
 import 'package:zauxoflix/data/backend/backend_providers.dart';
 import 'package:zauxoflix/data/db/app_database.dart';
-import 'package:zauxoflix/data/providers.dart';
 import 'package:zauxoflix/data/xtream/xtream_api.dart';
 import 'package:zauxoflix/data/xtream/xtream_models.dart';
-import 'package:zauxoflix/features/remote/remote_playback.dart';
-import 'package:zauxoflix/main.dart' show ZauxoflixApp;
 
-import 'package:zauxoflix/data/discovery/discovery_repository.dart';
 import 'package:zauxoflix/data/discovery/trakt_client.dart';
 import 'package:zauxoflix/data/discovery/title_identity.dart';
 
@@ -40,17 +30,6 @@ class PreviewAuth extends AuthController {
   Future<void> login(String email, String password) async {
     state = const Authenticated(viewer);
   }
-}
-
-class PreviewRemote extends RemotePlaybackController {
-  @override
-  void build() {}
-  @override
-  void attachPlayer(RemotePlayerHandle handle) {}
-  @override
-  void detachPlayer(RemotePlayerHandle handle) {}
-  @override
-  void playerChanged() {}
 }
 
 const previewShows = [
@@ -340,79 +319,4 @@ Future<int> seedPreview(AppDatabase db, String base) async {
       ),
   ]);
   return source;
-}
-
-Future<void> main() async {
-  WidgetsFlutterBinding.ensureInitialized();
-  final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
-  final base = 'http://127.0.0.1:${server.port}';
-  final posters = <int, Future<List<int>>>{};
-  var sample = File.fromUri(
-    File(Platform.resolvedExecutable).parent.uri.resolve('sample.mp4'),
-  );
-  if (!sample.existsSync()) sample = File('tool/preview/sample.mp4');
-  server.listen((request) async {
-    final response = request.response;
-    if (request.uri.path == '/sample.mp4' && sample.existsSync()) {
-      final size = await sample.length();
-      final range = RegExp(
-        r'^bytes=(\d+)-(\d*)$',
-      ).firstMatch(request.headers.value('range') ?? '');
-      final start = range == null ? 0 : int.parse(range[1]!);
-      final end = range == null || range[2]!.isEmpty
-          ? size - 1
-          : int.parse(range[2]!).clamp(0, size - 1);
-      if (start > end) {
-        response.statusCode = 416;
-      } else {
-        response.headers.set('Accept-Ranges', 'bytes');
-        if (range != null) {
-          response.statusCode = 206;
-          response.headers.set('Content-Range', 'bytes $start-$end/$size');
-        }
-        response.headers.contentType = ContentType('video', 'mp4');
-        response.contentLength = end - start + 1;
-        if (request.method != 'HEAD') {
-          await response.addStream(sample.openRead(start, end + 1));
-        }
-      }
-    } else if (request.uri.path.startsWith('/art/')) {
-      final id = int.tryParse(request.uri.pathSegments.last) ?? 0;
-      response.headers.contentType = ContentType('image', 'png');
-      response.add(await posters.putIfAbsent(id, () => artwork(id)));
-    } else {
-      response.statusCode = 404;
-    }
-    await response.close();
-  });
-
-  final db = AppDatabase.forTesting(NativeDatabase.memory());
-  await seedPreview(db, base);
-  await windowManager.ensureInitialized();
-  await windowManager.setTitle(
-    'Zauxoflix · Discovery preview · Sample catalog and scores',
-  );
-  await windowManager.setSize(const Size(1280, 800));
-  InputModality.attach();
-  fvp.registerWith(
-    options: {
-      'platforms': ['windows', 'linux', 'macos'],
-    },
-  );
-  runApp(
-    ProviderScope(
-      overrides: [
-        authControllerProvider.overrideWith(PreviewAuth.new),
-        databaseProvider.overrideWithValue(db),
-        xtreamApiProvider.overrideWith((ref) => PreviewApi(base)),
-        remotePlaybackProvider.overrideWith(PreviewRemote.new),
-        discoveryClientProvider.overrideWithValue(
-          const bool.fromEnvironment('PREVIEW_BASELINE')
-              ? null
-              : PreviewDiscovery(),
-        ),
-      ],
-      child: const ZauxoflixApp(),
-    ),
-  );
 }

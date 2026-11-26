@@ -8,6 +8,8 @@ analyzer:
     - windows/**
     - macos/**
     - linux/**
+    # Vendored upstream plugin, see its UPSTREAM.md.
+    - packages/**
   language:
     strict-casts: true
     strict-raw-types: true

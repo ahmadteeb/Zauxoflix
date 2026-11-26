@@ -4,6 +4,7 @@ import 'dart:io';
 
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zauxoflix/data/db/app_database.dart';
 import 'package:zauxoflix/data/sync/catalog_sync_service.dart';
@@ -274,6 +275,11 @@ void main() {
       guideRequested = Completer<void>();
       allowGuide = Completer<void>();
       responses['get_vod_streams'] = [];
+      // The guide failure is expected: capture its log instead of printing it.
+      final logs = <String>[];
+      final print = debugPrint;
+      debugPrint = (message, {wrapWidth}) => logs.add(message ?? '');
+      addTearDown(() => debugPrint = print);
       final refresh = sync.syncAll(source);
       await guideRequested!.future;
       try {
@@ -286,6 +292,7 @@ void main() {
         allowGuide!.complete();
         await refresh;
       }
+      expect(logs, [contains('Missing </tv>')]);
       expect(
         (await db.select(db.epgProgrammes).get()).single.title,
         'Last good guide',

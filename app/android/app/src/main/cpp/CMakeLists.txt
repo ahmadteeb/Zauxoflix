@@ -13,7 +13,7 @@ file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/ffmpeg-config/libavutil/avconfig.h"
     "#define AV_HAVE_BIGENDIAN 0\n#define AV_HAVE_FAST_UNALIGNED 0\n")
 
 add_library(zauxoflix_seek_frames SHARED
-    ../../../../../tool/webos/seek-frames.c)
+    ../../../../../tools/webos/seek-frames.c)
 target_include_directories(zauxoflix_seek_frames SYSTEM PRIVATE
     "${ffmpeg_headers_SOURCE_DIR}"
     "${CMAKE_CURRENT_BINARY_DIR}/ffmpeg-config")

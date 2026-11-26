@@ -183,7 +183,8 @@ class VideoPlayerWebOs extends VideoPlayerPlatform {
   Future<void> dispose(int textureId) async {
     _dispose(textureId);
     await _api.dispose(TextureMessage(textureId: textureId));
-    await _auxChannel.invokeMethod<void>('waitForRelease', {'textureId': textureId});
+    await _auxChannel
+        .invokeMethod<void>('waitForRelease', {'textureId': textureId});
   }
 
   void _dispose(int textureId) async {
@@ -206,7 +207,8 @@ class VideoPlayerWebOs extends VideoPlayerPlatform {
 
   // A stuck platform create would otherwise leave video_player's disposal
   // barrier unresolved. Clean up a native response delivered after the deadline.
-  Future<T> _openResource<T>(Future<T> request, Future<void> Function(T) release) {
+  Future<T> _openResource<T>(
+      Future<T> request, Future<void> Function(T) release) {
     var expired = false;
     return request.then((resource) {
       if (expired) release(resource).ignore();
@@ -246,7 +248,8 @@ class VideoPlayerWebOs extends VideoPlayerPlatform {
     final windowId = await _openResource(
       _windowChannel.invokeMethod<String>('create', {}),
       (id) async {
-        if (id != null) await _windowChannel.invokeMethod<void>('dispose', {'windowId': id});
+        if (id != null)
+          await _windowChannel.invokeMethod<void>('dispose', {'windowId': id});
       },
     );
     final CreateMessage message = CreateMessage(
@@ -263,7 +266,8 @@ class VideoPlayerWebOs extends VideoPlayerPlatform {
       response = await _openResource(_api.create(message), _api.dispose);
     } catch (_) {
       if (windowId != null) {
-        _windowChannel.invokeMethod<void>('dispose', {'windowId': windowId}).ignore();
+        _windowChannel
+            .invokeMethod<void>('dispose', {'windowId': windowId}).ignore();
       }
       rethrow;
     }
@@ -341,7 +345,8 @@ class VideoPlayerWebOs extends VideoPlayerPlatform {
       await _api.seekTo(message);
       final decoded = await frame.future.timeout(
         const Duration(seconds: 4),
-        onTimeout: () => throw PlatformException(code: 'seek_frame_unavailable'),
+        onTimeout: () =>
+            throw PlatformException(code: 'seek_frame_unavailable'),
       );
       if (!decoded) throw PlatformException(code: 'seek_unavailable');
     } finally {
@@ -521,7 +526,8 @@ class VideoPlayerWebOs extends VideoPlayerPlatform {
   //                     from _VideoWidgetState                      //
   //-----------------------------------------------------------------//
   void removeWidgetState(int textureId, _VideoWidgetState state) {
-    if (identical(_widgetStates[textureId], state)) _widgetStates.remove(textureId);
+    if (identical(_widgetStates[textureId], state))
+      _widgetStates.remove(textureId);
   }
 
   void addWidgetState(int texId, _VideoWidgetState state) {

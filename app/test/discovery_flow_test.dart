@@ -22,7 +22,7 @@ import 'package:zauxoflix/features/details/series_details_screen.dart';
 import 'package:zauxoflix/features/details/movie_details_screen.dart';
 import 'package:zauxoflix/features/details/trailer_screen.dart';
 import 'package:zauxoflix/features/home/home_screen.dart';
-import '../tool/discovery_preview.dart' as preview;
+import 'support/discovery_preview.dart' as preview;
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
