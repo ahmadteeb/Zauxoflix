@@ -60,11 +60,9 @@ For a live build, register a [Trakt Development app](https://developer.trakt.tv/
 
 With a personal IMDb index installed, open a matched movie or series and scroll to **IMDb details**. Select a cast member to see their character, available birth and death years, professions, known-for titles, and IMDb profile. The app uses the exact IMDb title ID supplied by the playlist or Trakt when available. It can also identify a title offline by its name, release year and movie or series type when exactly one record matches. The synopsis comes from the playlist provider.
 
-To build or refresh the index, run `python tool/import_imdb.py --output "/path/to/Zauxoflix/imdb.sqlite"` from `app`. Choose the app’s local application-support directory. On Windows it is normally `%APPDATA%\com.zauxoflix\zauxoflix`. On Linux it is normally `$XDG_DATA_HOME/com.zauxoflix.zauxoflix`, with `$XDG_DATA_HOME` defaulting to `~/.local/share`. The importer downloads four official compressed files. Pass `--datasets DIRECTORY` to reuse downloaded files. Reopen a title after the import finishes. [IMDb datasets](https://developer.imdb.com/non-commercial-datasets/) · [IMDb usage terms](https://help.imdb.com/article/imdb/general-information/can-i-use-imdb-data-in-my-software/G5JTRESSHJBBHTGX)
+To build or refresh the index, run `dart run lib/data/discovery/imdb_import.dart --output "/path/to/Zauxoflix/imdb.sqlite"` from `app`. Choose the app’s local application-support directory. On Windows it is normally `%APPDATA%\com.zauxoflix\zauxoflix`. On Linux it is normally `$XDG_DATA_HOME/com.zauxoflix.zauxoflix`, with `$XDG_DATA_HOME` defaulting to `~/.local/share`. The importer downloads four official compressed files. Pass `--datasets DIRECTORY` to reuse downloaded files. Reopen a title after the import finishes. [IMDb datasets](https://developer.imdb.com/non-commercial-datasets/) · [IMDb usage terms](https://help.imdb.com/article/imdb/general-information/can-i-use-imdb-data-in-my-software/G5JTRESSHJBBHTGX)
 
-For a private Android or LG TV build, run `python tool/prepare_device_imdb.py --index /path/to/imdb.sqlite --library /path/to/zauxoflix.sqlite --output-dir assets/private_imdb` from `app` in the personal build checkout. This reads the library to select IMDb titles, ratings and cast. Only those IMDb records enter the generated asset. Build and install the app normally. The first lookup unpacks the index into app storage for offline use. Repeat the preparation and build after refreshing the IMDb data or changing the library. Keep generated assets and packages containing them for individual personal use. Public builds use a clean checkout with only `assets/private_imdb/README.txt` in that directory.
-
-To try the isolated sample library on Windows, download the **Zauxoflix-Discovery-Preview-Windows** artifact from the **Windows discovery preview** workflow, extract the whole folder, and run `zauxoflix.exe`. You can also run `flutter run -d windows -t tool/discovery_preview.dart` from `app` with the Windows Flutter toolchain and NuGet installed. The preview uses an in-memory playlist and illustrative ratings. Open **Series → Severance**, play the trailer, switch between Episodes and More like this, then save the show and return Home. **The Office** is an ambiguous match. **Midnight Signal** demonstrates an unavailable trailer. Catalog playback uses the included sample clip. Trailer playback requires internet.
+For a private Android or LG TV build, run `dart run lib/data/discovery/imdb_prepare.dart --index /path/to/imdb.sqlite --library /path/to/zauxoflix.sqlite --output-dir assets/private_imdb` from `app` in the personal build checkout. This reads the library to select IMDb titles, ratings and cast. Only those IMDb records enter the generated asset. Build and install the app normally. The first lookup unpacks the index into app storage for offline use. Repeat the preparation and build after refreshing the IMDb data or changing the library. Keep generated assets and packages containing them for individual personal use. Public builds use a clean checkout with only `assets/private_imdb/README.txt` in that directory.
 
 ## ✨ Key Highlights
 
@@ -103,63 +101,56 @@ Zauxoflix is designed to feel native on every screen size and input method:
 ## 🖼️ Feature Tour & Visual Walkthrough
 
 ### 🏠 1. Home & Content Discovery
-Browse featured hero banners with instant playback triggers, pick up where you left off with **Continue Watching** progress bars, and explore recently added movies and series.
+Rotating featured picks from your library with **Details** and **My List** shortcuts and an **Up next** preview, followed by **Continue Watching** progress cards and Live TV suggestions.
 
 ![Home Screen](screenshots/home.png)
 
 ---
 
 ### 📺 2. Live TV & Electronic Programme Guide (EPG)
-Switch channels effortlessly with category grouping, instant search, a real-time inline preview player, and a multi-day XMLTV electronic programme guide.
+Browse **For You**, **Sports**, **Regional Picks**, favorites, recent and most watched channels, search by name, switch between versions of a channel, watch an inline preview, and open the **TV Guide**.
 
 ![Live TV Screen](screenshots/live-tv.png)
 
 ---
 
 ### 🎬 3. Movies Catalog
-Explore full VOD movie catalogs with category filter chips, search filtering, title sorting, and one-tap **My List** favorites toggling.
+A poster grid of your movie library with a category picker, filters, and a quick actions menu on each title.
 
 ![Movies Screen](screenshots/movies.png)
 
 ---
 
-### 🍿 4. TV Series & Episode Explorer
-Dive into television series with organized season selectors, episode overviews, thumbnails, and playback progress indicators.
+### 🍿 4. TV Series Catalog
+The same browsing layout for series, including Arabic titles and separate subtitled and dubbed editions where your playlist provides them.
 
 ![Series Screen](screenshots/series.png)
 
 ---
 
-### 📋 5. Title Details & Season Selector
-Inspect comprehensive title metadata, overview synopsis, category tags, episode listings, and direct resume/download triggers.
+### 📋 5. Title Details & Cast
+Play an episode, watch the trailer, save to **My List** or play on another device, with the Trakt rating, an IMDb link and the cast gallery.
 
 ![Details Screen](screenshots/details.png)
 
 ---
 
-### ⏯️ 6. Cinema Player & Transport Controls
-Experience hardware-accelerated playback with audio track selection, embedded subtitles, aspect ratio controls (Fit, Fill, Stretch, 16:9, 4:3), 48dp touch/remote friendly transport buttons, and desktop fullscreen mode.
+### ⏯️ 6. Player & Transport Controls
+Skip back 10 or forward 30 seconds, jump to the next episode, open the episode list or series details, and control subtitles, volume and further options.
 
 ![Player Screen](screenshots/player.png)
 
 ---
 
 ### 📥 7. Offline Media Downloads
-Download movies and series episodes directly to local device storage on supported platforms for watching on flights, commutes, or off-grid locations.
+Queue episodes and follow each transfer, grouped by series, with progress, size, speed and time remaining.
 
 ![Downloads Screen](screenshots/downloads.png)
 
 ---
 
-### 🔌 8. Connect Playlist & Provider Setup
-Connect your IPTV service via **Xtream Codes API** (server URL, username, password) or standard **M3U / M3U Plus** playlist URLs with optional XMLTV EPG URLs.
-
-![Connect Playlist Screen](screenshots/connect-playlist.png)
-
----
-
-### 🔐 9. Authentication & Seamless TV Pairing
-Sign in securely with email and password, reset passwords using secure recovery tokens, or pair your Android TV in seconds with a 5-minute QR code or pairing code.
+### 🔐 8. Authentication & TV Pairing
+Sign in with email and password, recover a forgotten password, create an account, or pair a TV with a code.
 
 ![Login Screen](screenshots/login.png)
 
@@ -292,15 +283,32 @@ flowchart TD
 
 ```bash
 supabase login
-python supabase/scripts/update_database.py YOUR_PROJECT_REF
+supabase migration list --remote=YOUR_PROJECT_REF
+supabase db push --remote=YOUR_PROJECT_REF --dry-run
 ```
 
-For a new project, rerun the script with `--apply --deploy-pairing` after reviewing the plan. Existing projects that have applied the four repository migrations can move to 1.1.0 without a Supabase schema update. The app upgrades its SQLite library on first launch. See the [database upgrade guide](supabase/README.md#deployment-and-checks).
+5. After reviewing the plan, apply the migrations. For a new project, or when the Edge Function changed, also deploy TV pairing.
+
+```bash
+supabase db push --remote=YOUR_PROJECT_REF
+supabase functions deploy tv-pairing --remote=YOUR_PROJECT_REF --no-verify-jwt
+```
+
+Existing projects that have applied the four repository migrations can move to 1.1.0 without a Supabase schema update. The app upgrades its SQLite library on first launch. See the [database upgrade guide](supabase/README.md#deployment-and-checks).
 
 > [!IMPORTANT]
 > Never embed a `service_role` key in Flutter. Flutter only receives the project URL and the publishable (`anon`) key. See [Supabase architecture details](supabase/README.md).
 
-In your GitHub fork, set `SUPABASE_URL` and `SUPABASE_ANON_KEY` as Actions secrets. Set the optional `TRAKT_CLIENT_ID` as an Actions variable. For local builds you can pass the Supabase values via `--dart-define-from-file=supabase.local.json` from `app`. Local config files and generated personal IMDb assets are ignored by Git.
+In your GitHub fork, set `SUPABASE_URL` and `SUPABASE_ANON_KEY` as Actions secrets. Set the optional `TRAKT_CLIENT_ID` as an Actions variable.
+
+To sign Android releases with your own key, create a keystore once and keep a private backup of it and its passwords:
+
+```bash
+keytool -genkeypair -v -keystore release.keystore -alias zauxoflix -keyalg RSA -keysize 2048 -validity 10000
+base64 -w0 release.keystore   # value for ANDROID_KEYSTORE_BASE64
+```
+
+Add the Actions secrets `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS` and `ANDROID_KEY_PASSWORD`. Without them, releases are debug-signed. Anyone with a debug-signed install must uninstall once before installing a release signed with your key. For local builds you can pass the Supabase values via `--dart-define-from-file=supabase.local.json` from `app`. Local config files and generated personal IMDb assets are ignored by Git.
 
 ---
 
@@ -499,7 +507,7 @@ After updating, open the app, pair it with your account, and relaunch it to chec
 To build the package locally, set up the [LG Flutter SDK and NDK](https://github.com/lg-flutter-webos/flutter-webos/blob/main/doc/getting-started.md) on Linux, then run the same build script used by CI from the repository root:
 
 ```bash
-bash app/tool/webos/build.sh --build-name=1.0.0 --build-number=1 \
+bash app/tools/webos/build.sh --build-name=1.0.0 --build-number=1 \
   "--dart-define=SUPABASE_URL=$SUPABASE_URL" \
   "--dart-define=SUPABASE_ANON_KEY=$SUPABASE_ANON_KEY"
 ```

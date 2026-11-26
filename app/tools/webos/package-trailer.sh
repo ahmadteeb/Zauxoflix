@@ -5,9 +5,9 @@ cd "$(dirname "${BASH_SOURCE[0]}")/../.."
 stage=build/webos/trailer-package
 output=build/webos/trailers
 mkdir -p "$stage/app" "$stage/service" "$output"
-cp tool/webos/trailer/{index.html,appinfo.json} "$stage/app"
+cp tools/webos/trailer/{index.html,appinfo.json} "$stage/app"
 cp assets/icons/icon.png "$stage/app"
-cp tool/webos/trailer_service/{host.js,services.json,package.json} assets/trailer/player.html "$stage/service"
+cp tools/webos/trailer_service/{host.js,services.json,package.json} assets/trailer/player.html "$stage/service"
 python3 - "$stage/app/appinfo.json" "${1:-}" <<'PY'
 import json
 from pathlib import Path

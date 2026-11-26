@@ -20,14 +20,14 @@ import json
 from pathlib import Path
 import sys
 
-manifest = json.loads(Path('tool/webos/appinfo.json').read_text())
+manifest = json.loads(Path('tools/webos/appinfo.json').read_text())
 if sys.argv[1]:
     manifest['version'] = sys.argv[1]
 Path('webos/meta/appinfo.json').write_text(json.dumps(manifest, indent=2) + '\n')
 PY
 
 cp assets/icons/icon.png webos/meta/icon.png
-cp tool/webos/runner/main.cc webos/runner/main.cc
+cp tools/webos/runner/main.cc webos/runner/main.cc
 
 if [[ -z "${CC:-}" && -n "${WEBOS_FLUTTER_NDK_ENV:-}" ]]; then
   # The Qt-style SDK environment scripts reference optional variables.
@@ -35,7 +35,7 @@ if [[ -z "${CC:-}" && -n "${WEBOS_FLUTTER_NDK_ENV:-}" ]]; then
   source "$WEBOS_FLUTTER_NDK_ENV"
   set -u
 fi
-bash tool/webos/build-seek-frames.sh webos/runner/zauxoflix-seek-frames.o
+bash tools/webos/build-seek-frames.sh webos/runner/zauxoflix-seek-frames.o
 if ! grep -Fq 'runner/zauxoflix-seek-frames.o' webos/CMakeLists.txt; then
   cat >> webos/CMakeLists.txt <<'CMAKE'
 
@@ -46,4 +46,4 @@ CMAKE
 fi
 
 flutter-webos build webos --release --dart-define=ZAUXOFLIX_WEBOS=true "$@"
-bash tool/webos/package-trailer.sh "$version"
+bash tools/webos/package-trailer.sh "$version"
