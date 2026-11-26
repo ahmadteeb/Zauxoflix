@@ -18,6 +18,7 @@ import 'core/responsive/form_factor.dart';
 import 'core/router/app_router.dart';
 import 'core/theme/app_theme.dart';
 import 'core/widgets/app_background.dart';
+import 'core/widgets/close_database_on_exit.dart';
 import 'data/backend/backend_providers.dart';
 import 'data/backend/device_identity.dart';
 import 'data/backend/key_value_store.dart';
@@ -151,7 +152,9 @@ Future<Widget> _initializeApplication() async {
       keyValueStoreProvider.overrideWithValue(store),
       deviceIdentityProvider.overrideWithValue(device),
     ],
-    child: const ZauxoflixApp(),
+    child: Platform.isLinux
+        ? const CloseDatabaseOnExit(child: ZauxoflixApp())
+        : const ZauxoflixApp(),
   );
 }
 
