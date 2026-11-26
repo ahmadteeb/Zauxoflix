@@ -28,6 +28,8 @@ env:
   FLUTTER_VERSION: 3.47.9
   TAG: ${{ github.event.inputs.tag_name || github.ref_name }}
   BUILD_NUMBER: ${{ github.run_number }}
+  # Video SDK for fvp. Its default, a SourceForge nightly, moves and can return an empty file.
+  FVP_DEPS_URL: https://github.com/wang-bin/mdk-sdk/releases/download/v0.40.1
 
 defaults:
   run:
@@ -339,6 +341,10 @@ jobs:
           [ -z "$SUPABASE_URL" ] || DEFINES+=("--dart-define=SUPABASE_URL=$SUPABASE_URL")
           [ -z "$SUPABASE_ANON_KEY" ] || DEFINES+=("--dart-define=SUPABASE_ANON_KEY=$SUPABASE_ANON_KEY")
           flutter pub get
+          # GitHub names this file differently from what fvp asks for, so place it first.
+          SDK=windows/flutter/ephemeral/.plugin_symlinks/fvp/windows/mdk-sdk-windows-x64.7z
+          curl -fsSL --retry 5 --retry-all-errors -o "$SDK" "$FVP_DEPS_URL/mdk-sdk-windows-x64-vs2026.7z"
+          echo "15b37964a57c62edd4abd078c5866cd4ff35f70c0dd1ca1b0a3d463213df8338  $SDK" | sha256sum --check
           flutter build windows --release --build-name="${TAG#v}" --build-number="$BUILD_NUMBER" "${DEFINES[@]}"
 
       - name: Bundle Visual C++ runtime
