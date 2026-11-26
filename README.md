@@ -101,63 +101,56 @@ Zauxoflix is designed to feel native on every screen size and input method:
 ## 🖼️ Feature Tour & Visual Walkthrough
 
 ### 🏠 1. Home & Content Discovery
-Browse featured hero banners with instant playback triggers, pick up where you left off with **Continue Watching** progress bars, and explore recently added movies and series.
+Rotating featured picks from your library with **Details** and **My List** shortcuts and an **Up next** preview, followed by **Continue Watching** progress cards and Live TV suggestions.
 
 ![Home Screen](screenshots/home.png)
 
 ---
 
 ### 📺 2. Live TV & Electronic Programme Guide (EPG)
-Switch channels effortlessly with category grouping, instant search, a real-time inline preview player, and a multi-day XMLTV electronic programme guide.
+Browse **For You**, **Sports**, **Regional Picks**, favorites, recent and most watched channels, search by name, switch between versions of a channel, watch an inline preview, and open the **TV Guide**.
 
 ![Live TV Screen](screenshots/live-tv.png)
 
 ---
 
 ### 🎬 3. Movies Catalog
-Explore full VOD movie catalogs with category filter chips, search filtering, title sorting, and one-tap **My List** favorites toggling.
+A poster grid of your movie library with a category picker, filters, and a quick actions menu on each title.
 
 ![Movies Screen](screenshots/movies.png)
 
 ---
 
-### 🍿 4. TV Series & Episode Explorer
-Dive into television series with organized season selectors, episode overviews, thumbnails, and playback progress indicators.
+### 🍿 4. TV Series Catalog
+The same browsing layout for series, including Arabic titles and separate subtitled and dubbed editions where your playlist provides them.
 
 ![Series Screen](screenshots/series.png)
 
 ---
 
-### 📋 5. Title Details & Season Selector
-Inspect comprehensive title metadata, overview synopsis, category tags, episode listings, and direct resume/download triggers.
+### 📋 5. Title Details & Cast
+Play an episode, watch the trailer, save to **My List** or play on another device, with the Trakt rating, an IMDb link and the cast gallery.
 
 ![Details Screen](screenshots/details.png)
 
 ---
 
-### ⏯️ 6. Cinema Player & Transport Controls
-Experience hardware-accelerated playback with audio track selection, embedded subtitles, aspect ratio controls (Fit, Fill, Stretch, 16:9, 4:3), 48dp touch/remote friendly transport buttons, and desktop fullscreen mode.
+### ⏯️ 6. Player & Transport Controls
+Skip back 10 or forward 30 seconds, jump to the next episode, open the episode list or series details, and control subtitles, volume and further options.
 
 ![Player Screen](screenshots/player.png)
 
 ---
 
 ### 📥 7. Offline Media Downloads
-Download movies and series episodes directly to local device storage on supported platforms for watching on flights, commutes, or off-grid locations.
+Queue episodes and follow each transfer, grouped by series, with progress, size, speed and time remaining.
 
 ![Downloads Screen](screenshots/downloads.png)
 
 ---
 
-### 🔌 8. Connect Playlist & Provider Setup
-Connect your IPTV service via **Xtream Codes API** (server URL, username, password) or standard **M3U / M3U Plus** playlist URLs with optional XMLTV EPG URLs.
-
-![Connect Playlist Screen](screenshots/connect-playlist.png)
-
----
-
-### 🔐 9. Authentication & Seamless TV Pairing
-Sign in securely with email and password, reset passwords using secure recovery tokens, or pair your Android TV in seconds with a 5-minute QR code or pairing code.
+### 🔐 8. Authentication & TV Pairing
+Sign in with email and password, recover a forgotten password, create an account, or pair a TV with a code.
 
 ![Login Screen](screenshots/login.png)
 

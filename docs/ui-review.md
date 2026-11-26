@@ -65,7 +65,7 @@ The follow-up review uses widget layout and interaction checks without taking or
 
 Tests also exercise mobile More → Settings navigation, version comparison, update-page launching, provider account details, credential redaction, and the no-browser fallback. Existing routing/back, pairing, Live TV visibility, sync and playback-state tests remain in the full suite.
 
-The existing README screenshots were rendered in the earlier review from actual widgets with synthetic data.
+The README screenshots are captures of the running app.
 
 ## TV QR pairing
 
